@@ -56,7 +56,7 @@ class cameraModule:
 
                 # Show playback
                 cv.imshow("Camera", frame)
-                cv.imshow("Mask", mask)
+                # cv.imshow("Mask", mask)
 
                 coords = None
 

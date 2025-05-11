@@ -30,57 +30,59 @@ class pongBot:
         :param epsr: epsilon r, % of reach to watch for ball cross
         :param dt: delta time, time resolution
         """
-        # TODO: check to ensure some minimum velocity AND ball is coming towards THIS arm
-        ...
+        ball_kinematics = []
 
         bx = ball_pos[0]
         by = ball_pos[1]
 
         vx = ball_vel[0] # should always be < 0
         vy = ball_vel[1]
-
         # Radius to watch for cross
         r_prep = espr*self.reach
 
         # Absolute y max given arena bounds
         y_max = arena_width/2
 
-        # Initial angle of velocity
-        theta = math.atan2(vy, vx)
+        # Ensure ball is coming towards robot with significant velocity
+        if (vx < 0) and (vx**2 + vy**2 > 0.1**2):
+            # Initial angle of velocity
+            theta = math.atan2(vy, vx)
+            print(theta)
+            print()
 
-        # Iterate until ball is past arm or within radius
-        while bx^2 + by^2 >  (r_prep)^2:
-            # Calculate incoming ball position differentials
-            dx = vx*dt
-            dy = vy*dt
+            # Iterate until ball is past arm or within radius
+            while bx**2 + by**2 >  r_prep**2 and bx > 0:
+                # Calculate incoming ball position differentials
+                dx = vx*dt
+                dy = vy*dt
+                print(math.atan2(dy, dx))
 
-            bounds_violation = 0
+                bounds_violation = 0
 
-            # Check for upper bound violation
-            if by + dy + ball_radius > y_max:
-                bounds_violation = 1
+                # Check for upper bound violation
+                if by + dy + ball_radius > y_max:
+                    bounds_violation = 1
 
-            # Check for lower bound violation
-            if by + dy - ball_radius < -y_max:
-                bounds_violation = -1
+                # Check for lower bound violation
+                if by + dy - ball_radius < -y_max:
+                    bounds_violation = -1
 
-            if bounds_violation is not 0:
-                pre_collision_dy = bounds_violation * (y_max - ball_radius) - by
-                pre_collision_dx = pre_collision_dy * math.tan(theta)  
+                if bounds_violation != 0:
+                    pre_collision_dy = bounds_violation * (y_max - ball_radius) - by
+                    print("dypre", pre_collision_dy)
 
-                theta = 2*np.pi - theta
-                post_collision_dx = dx - pre_collision_dx
+                    post_collision_dy = dy - pre_collision_dy
+                    print("dypost", post_collision_dy)
 
-                post_collision_dy = post_collision_dx * math.tan(theta)
+                    dy = dy - 2*post_collision_dy
+                    print("dy", dy)
+                    print()
 
-                dy = pre_collision_dy - bounds_violation * post_collision_dy
+                    vy *= -1
+                bx += dx
+                by += dy
+                ball_kinematics.append([bx, by, bounds_violation, vx, vy])
 
-                vy = -vy
+            # TODO: Calculate exact cross point
 
-            bx += dx
-            bx += dy
-
-
-        # TODO: Calculate exact cross point
-
-        return ... # exact cross point, and maybe array for vis?
+        return np.asarray(ball_kinematics) # exact cross point, and maybe array for vis?
