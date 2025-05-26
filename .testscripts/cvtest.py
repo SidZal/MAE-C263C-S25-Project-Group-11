@@ -9,7 +9,7 @@ from camera import cameraModule
 pink = [(150, 50, 20), (170, 255, 255)]
 red = [] # Red wraps around Hue value, and that makes it harder </3
 
-cam = cameraModule(0, pink, 400, 10)
+cam = cameraModule(4, pink, 400, 10)
 
 while True:
     if cam.find_ball():

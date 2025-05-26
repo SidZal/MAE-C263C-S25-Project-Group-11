@@ -3,6 +3,10 @@ import numpy as np
 import imutils
 import time
 
+def rolling_add(arr, obj):
+    arr = np.delete(arr, 0, axis=0)
+    arr = np.append(arr, obj, axis=0)
+
 class cameraModule:
     """
     Class for handling camera and cv calls
@@ -26,20 +30,27 @@ class cameraModule:
         self.frame = None
         self.last_time = time.perf_counter_ns()
 
-        # Init kinematics
-        self.ball_pos = np.array([300, 300])
-        self.ball_vel = np.array([0, 0])
-        self.ball_radius_measured = None
-        self.ball_path = []
-
         self.height = int(self.cam.get(cv.CAP_PROP_FRAME_HEIGHT))
         self.width = int(self.cam.get(cv.CAP_PROP_FRAME_WIDTH))
+
+        # Init kinematics
+        rolling_range = 5
+        self.ball_pos = np.asarray([self.width/2, self.height/2], dtype=int)
+        self.ball_vel = np.zeros((rolling_range, 2))
+        self.ball_radius_measured = None
+        self.ball_predicted_path = None
+        self.clear_predicted_path()
+
+        self.ball_endpoint_rolling = np.zeros((rolling_range, 2), dtype=int)
+        self.ball_endpoint = None
+
+    def clear_predicted_path(self):
+        self.ball_predicted_path = np.zeros((0, 1), dtype = int)
 
     def find_ball(self):
         """
         Grabs camera frame and does computer vision
             :return: success (T/F) 
-            :return coords: either None or 2x1 x,y in pixels (?)
         """
         ret, frame = self.cam.read()
 
@@ -72,12 +83,17 @@ class cameraModule:
                     # update ball velocity TODO: a filter
                     loop_time = time.perf_counter_ns()
                     dt = (loop_time - self.last_time) / (1e9) # convert to s
-                    self.ball_vel = ( (int(x) - self.ball_pos[0]) / dt, (int(y) - self.ball_pos[1]) / dt)
+                    new_vel = np.array([[(int(x) - self.ball_pos[0]) / dt, (int(y) - self.ball_pos[1]) / dt]])
+                    
+                    rolling_add(self.ball_vel, new_vel)
+
                     self.last_time = loop_time
 
                     # update ball pos/rad
-                    self.ball_pos = np.array([int(x), int(y)])
+                    self.ball_pos = [int(x), int(y)]
                     self.ball_radius_measured = int(radius)
+                else:
+                    self.ball_pos.clear()
                 
             return True
         return False
@@ -93,11 +109,10 @@ class cameraModule:
         :param epsr: epsilon r, % of reach to watch for ball cross
         :param dt: delta time, time resolution
         """
-        bx = self.ball_pos[0]
-        by = self.ball_pos[1]
+        [bx, by] = self.ball_pos
 
-        vx = self.ball_vel[0] # should always be < 0
-        vy = self.ball_vel[1]
+        # Take rolling average
+        [vx, vy] = np.mean(self.ball_vel, axis=0)
 
         # Radius to watch for cross
         r_prep = espr*1
@@ -113,7 +128,7 @@ class cameraModule:
             # print(theta)
 
             # reset ball path
-            self.ball_path.clear()
+            self.clear_predicted_path()
 
             # TODO define where to predict until
             while bx > 0:
@@ -150,9 +165,16 @@ class cameraModule:
                 by = int(by + dy)
 
                 # Store ball this iter
-                self.ball_path.append(np.array([bx, by, bounds_violation]))
+                self.ball_predicted_path = np.append(self.ball_predicted_path, [[bx, by, bounds_violation]], axis=0)
 
             # TODO: Calculate exact cross point
+            if np.size(self.ball_predicted_path) == 0:
+                self.ball_endpoint = None
+            else:
+                rolling_add(self.ball_endpoint_rolling, [self.ball_predicted_path[-1]])
+                self.ball_endpoint = np.mean(self.ball_predicted_path, axis=0)
+
+            return self.ball_endpoint
 
     def playback(self):
         '''
@@ -166,13 +188,18 @@ class cameraModule:
         cv.circle(self.frame, self.ball_pos, self.ball_radius_measured, self.color[1], 2)
         cv.circle(self.frame, self.ball_pos, 5, (0, 0, 255), -1)
 
+        # Draw circle about smoothed endpoint
+        if self.ball_endpoint is not None:
+            cv.circle(self.frame, self.ball_endpoint, self.ball_radius_measured, self.color[1], 2)
+            cv.circle(self.frame, self.ball_pos, 5, (0, 0, 255), -1)
+
         # draw velocity vector
         velScalar = .2
         pointTo = (int(self.ball_pos[0] + velScalar*self.ball_vel[0]), int(self.ball_pos[1] + velScalar*self.ball_vel[1]))
         cv.arrowedLine(self.frame, self.ball_pos, pointTo, (0, 255, 0), 2)
 
         # Draw prediction
-        for prediction_point in self.ball_path:
+        for prediction_point in self.ball_predicted_path:
             clr = (255, 0, 0)
             if prediction_point[2] != 0:
                 clr = (0, 0, 255) # draw bounces red
