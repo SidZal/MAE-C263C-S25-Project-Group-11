@@ -15,6 +15,7 @@ from dxl import (
 )
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
+from scipy.interpolate import CubicSpline
 
 from mechae263C_helpers.minilabs import FixedFrequencyLoopManager, DCMotorModel
 
@@ -29,7 +30,6 @@ class InverseDynamicsController:
         q_desired_deg: Sequence[float],
         max_duration_s: float = 2.0,
     ):
-        # ------------------------------------------------------------------------------
         # Controller Related Variables
         # ------------------------------------------------------------------------------
         self.q_initial_rad = np.deg2rad(q_initial_deg)
@@ -48,21 +48,19 @@ class InverseDynamicsController:
         self.time_stamps = deque()
         # ------------------------------------------------------------------------------
 
-
-        # ------------------------------------------------------------------------------
         # Manipulator Parameters
         # ------------------------------------------------------------------------------
-        self.a_1 = self.a_2 = 
-        self.l_1 = self.l_2 = 
-        self.m_l1 = self.m_l2 = 
-        self.I_l1 = self.I_l2 = 
-        self.m_m1 = self.m_m2 = 
-        self.I_m1 = self.I_m2 = 
-        self.k_r1 = self.k_r2 = 
+        self.a_1 = 0.15 # m
+        self.a_2 = 0.125 # m
+        self.l_1 = self.a_1 / 2 # m
+        self.l_2 = self.a_2 / 2 # m
+        self.m_l1 = self.m_l2 = 0.035 # kg
+        self.I_l1 = self.I_l2 = 0.001 # kg-m^2
+        self.m_m1 = self.m_m2 = 0.08 # kg
+        self.I_m1 = self.I_m2 = 0.007 # kg-m^2
+        self.k_r1 = self.k_r2 = 193
         # ------------------------------------------------------------------------------
 
-
-        # ------------------------------------------------------------------------------
         # Inertia Matrix
         # ------------------------------------------------------------------------------
         self.B_avg = np.zeros((2, 2))
@@ -70,40 +68,18 @@ class InverseDynamicsController:
         self.B_avg[1, 1] = self.I_l2 + self.m_l2*self.l_2**2 + self.k_r2**2*self.I_m2
         # ------------------------------------------------------------------------------
 
-
-        # ------------------------------------------------------------------------------
-        # Gain Matrices
-        # ------------------------------------------------------------------------------
-        self.K_P = np.diag([, ])
-        self.K_D = np.diag([, ])
-        # ------------------------------------------------------------------------------
-
-
-        # ------------------------------------------------------------------------------
-        # Motor Communication Related Variables
-        # ------------------------------------------------------------------------------
-        self.motor_group: DynamixelMotorGroup = motor_group
-        # ------------------------------------------------------------------------------
-
-
-        # ------------------------------------------------------------------------------
         # DC Motor Modeling
         # ------------------------------------------------------------------------------
+        self.motor_group: DynamixelMotorGroup = motor_group
         self.pwm_limits = []
         for info in self.motor_group.motor_info.values():
             self.pwm_limits.append(info.pwm_limit)
         self.pwm_limits = np.asarray(self.pwm_limits)
-
-        # This model is based on the DC motor model learned in class, it allows us to
-        # convert the torque control action u into something we can actually send to the
-        # MX28-AR dynamixel motors (pwm voltage commands).
         self.motor_model = DCMotorModel(
             self.control_period_s, pwm_limits=self.pwm_limits
         )
         # ------------------------------------------------------------------------------
 
-
-        # ------------------------------------------------------------------------------
         # Clean Up / Exit Handler Code
         # ------------------------------------------------------------------------------
         signal.signal(signal.SIGINT, self.signal_handler)
@@ -115,10 +91,10 @@ class InverseDynamicsController:
         start_time = time.time()
         while self.should_continue:
 
-            # Read position feedback (and convert resulting dict into NumPy array)
+            # Read joint position feedback and convert resulting dict into NumPy array
             q_rad = np.asarray(list(self.motor_group.angle_rad.values()))
 
-            # Read Data from Multiple Dynamixels – Joint Velocities 
+            # Read joint velocity feedback and convert resulting dict into NumPy array
             qdot_rad_per_s = (
                 np.asarray(list(self.motor_group.velocity_rad_per_s.values()))
             )
@@ -126,30 +102,31 @@ class InverseDynamicsController:
             self.joint_position_history.append(q_rad)  # Save for plotting
             self.time_stamps.append(time.time() - start_time)  # Save for plotting
 
-            # Check termination criterion -- Stop after 2 seconds
+            # Check termination criterion
             if self.time_stamps[-1] - self.time_stamps[0] > self.max_duration_s:
                 self.stop()
                 return
 
-            # Compute error term
+            # Compute joint position error
             q_error = self.q_desired_rad - q_rad
 
-            # Calculate control action
-            # --------------------------------------------------------------------------
-
+            # Compute desired cubic spline trajectory
             dt = self.control_period_s
             times = np.arange(0, self.max_duration_s + dt, dt)
             waypoint_times = np.asarray([0, self.max_duration_s / 2, self.max_duration_s])
             waypoints = np.stack([self.q_initial_rad, (self.q_initial_rad + self.q_desired_rad)/2, self.q_desired_rad], axis=1)
 
-            q_d_traj, qdot_d_traj, qddot_d_traj = eval_cubic_spline_traj(
+            q_d_traj, qdot_d_traj, qddot_d_traj = self.eval_cubic_spline_traj(
             times=times, waypoint_times=waypoint_times, waypoints=waypoints
             )
 
+            # Compute joint velocity error
             qdot_error = qdot_d_traj - qdot_rad_per_s
+
+            # Calculate control action
             u = self.B_avg*qddot_d_traj + self.K_P*q_error + self.K_D*qdot_error
 
-            # Convert torque control action into a PWM command using model of dynamixel motors
+            # Convert torque control action into a PWM command using model of Dynamixel motors
             pwm_command = self.motor_model.calc_pwm_command(u)
 
             # Sending joint PWM commands 
@@ -173,14 +150,27 @@ class InverseDynamicsController:
     def signal_handler(self, *_):
         self.stop()
 
+    def eval_cubic_spline_traj(
+        self,
+        times: NDArray[np.double],
+        waypoint_times: NDArray[np.double],
+        waypoints: NDArray[np.double],
+    ) -> tuple[NDArray[np.double], NDArray[np.double], NDArray[np.double]]:
+        times = np.asarray(times, dtype=np.double)
+        waypoint_times = np.asarray(waypoint_times, dtype=np.double)
+        waypoints = np.asarray(waypoints, dtype=np.double)
+
+        spl = CubicSpline(x=waypoint_times, y=waypoints, axis=1, bc_type="clamped")
+
+        return spl(times), spl(times, 1), spl(times, 2)
+
     def go_to_home_configuration(self):
-        """Puts the motors in 'home' position"""
         self.should_continue = True
         self.motor_group.disable_torque()
         self.motor_group.set_mode(DynamixelMode.Position)
         self.motor_group.enable_torque()
 
-        # Move to home position (self.q_initial)
+        # Move to home position (currently self.q_initial)
         home_positions_rad = {
             dynamixel_id: self.q_initial_rad[i]
             for i, dynamixel_id in enumerate(self.motor_group.dynamixel_ids)
@@ -199,7 +189,6 @@ class InverseDynamicsController:
                     should_continue_loop = True
                     break
             
-
         # Set PWM Mode (i.e. voltage control)
         self.motor_group.disable_torque()
         self.motor_group.set_mode(DynamixelMode.PWM)
@@ -207,22 +196,21 @@ class InverseDynamicsController:
 
 
 if __name__ == "__main__":
-    # ----------------------------------------------------------------------------------
-    # Tuning Controller Gains
-    # ----------------------------------------------------------------------------------
 
-    K_P = self.K_P
-    K_D = self.K_D
+    # Motor Positions
+    # ------------------------------------------------------------------------------
+    # Leftmost Configuration = [335, 240]
+    # Center Configuration = [300, 220]
+    # Rightmost Configuration = [255, 245]
+    # ------------------------------------------------------------------------------
 
-    # ----------------------------------------------------------------------------------
+    # Gain Matrices
+    K_P = np.diag([ , ])
+    K_D = np.diag([ , ])
+    
     # Create `DynamixelIO` object to store the serial connection to U2D2
-    #
-    # TODO: Replace "..." below with the correct serial port found from Dynamixel Wizard
-    #
-    # Note: You may need to change the Baud Rate to match the value found from
-    #       Dynamixel Wizard
     dxl_io = DynamixelIO(
-        device_name="...",
+        device_name="COM3",
         baud_rate=57_600,
     )
 
@@ -232,15 +220,14 @@ if __name__ == "__main__":
         dynamixel_model=DynamixelModel.MX28
     )
 
-    # TODO: Replace "..." below with the correct Dynamixel IDs found from Dynamixel Wizard 
-    #       (in order of closest to base frame first)
-    dynamixel_ids = ..., ...
-
+    # Create Dynamixel IDs
+    dynamixel_ids = [1, 2]
     motor_group = motor_factory.create(*dynamixel_ids)
 
-    while
+    while # Condition TBD
+
         # Get joint angles
-        q_initial = np.asarray(list(self.motor_group.angle_rad.values()))
+        q_initial = np.asarray(list(motor_group.angle_rad.values()))
         q_desired = # Get from ball position
         
         # Make controller
@@ -255,16 +242,15 @@ if __name__ == "__main__":
         # Run controller
         controller.start_control_loop()
 
-        # Motor code to hit the ball with fixed force
+        # Insert code to hit the ball
 
+
+"""
     # Extract results
     time_stamps = np.asarray(controller.time_stamps)
     joint_positions = np.rad2deg(controller.joint_position_history).T
 
-"""
     # ----------------------------------------------------------------------------------
-    # Plot Results
-    # TODO: Section 5 (Plotting Joint Position Time Histories)
     # Plot joint positions of the manipulator versus time using the `joint_positions`
     # and `time_stamps` variables, respectively.
     # ----------------------------------------------------------------------------------
