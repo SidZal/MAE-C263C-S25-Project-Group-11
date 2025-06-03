@@ -143,16 +143,8 @@ def run_simulation(
         inertia_matrix = builder.AddNamedSystem("B_avg", MatrixGain(B_avg))
 
     # ----------------------------------------------------------------------------------
-    # Connect the systems in the `DiagramBuilder` (i.e. add arrows of block diagram)
+    # Building Diagram
     # ----------------------------------------------------------------------------------
-    # `builder.ExportInput(input_port)` makes the provided "input_port" into an input
-    # of the entire diagram
-    # The functions system.get_input_port() returns the input port of the given system
-    #   - If there is more than one input port, you must specify the index of the
-    #     desired input
-    # The functions system.get_output_port() returns the output port of the given system
-    #   - If there is more than one output port, you must specify the index of the
-    #     desired output
     builder.Connect(q_traj.get_output_port(), joint_position_error.get_input_port(0))
     builder.Connect(qdot_traj.get_output_port(), joint_velocity_error.get_input_port(0))
     if should_apply_control_torques:
@@ -161,16 +153,12 @@ def run_simulation(
     joint_velocity_output = arm.get_output_port(0)
     joint_position_output = arm.get_output_port(1)
 
-    # TODO:
-    #   Replace any `...` below with the correct system and values. Please keep the
-    #   system names the same
     builder.Connect(joint_position_output, joint_position_error.get_input_port(1))
     builder.Connect(joint_velocity_output, joint_velocity_error.get_input_port(1))
     if should_apply_control_torques:
         builder.Connect(joint_position_error.get_output_port(), K_p_gain.get_input_port())
         builder.Connect(joint_velocity_error.get_output_port(), K_d_gain.get_input_port())
 
-        #
         builder.Connect(
             inertia_matrix.get_output_port(), control_torque.get_input_port(0)
         )
@@ -239,6 +227,3 @@ def run_simulation(
     return t, (q_d_traj, q_actual), (qdot_d_traj, qdot_actual), control_torques, diagram
 
 
-
-    fig, _ = plot_diagram(diagram)
-    fig.savefig("drake_diagram.png")
