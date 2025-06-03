@@ -115,7 +115,7 @@ class InverseDynamicsController:
         start_time = time.time()
         while self.should_continue:
 
-            # Read position feedback (and covert resulting dict into to NumPy array)
+            # Read position feedback (and convert resulting dict into NumPy array)
             q_rad = np.asarray(list(self.motor_group.angle_rad.values()))
 
             # Read Data from Multiple Dynamixels – Joint Velocities 
@@ -137,18 +137,20 @@ class InverseDynamicsController:
             # Calculate control action
             # --------------------------------------------------------------------------
 
-            t, (q_d, q), (qdot_d, qdot), control_torques, diagram = run_simulation(
-                q_initial=self.q_initial_rad,
-                q_final=self.q_desired_rad,
-                B_avg=self.B_avg,
-                K_p=self.K_P,
-                K_d=self.K_D,
-                simulation_duration_s=self.max_duration_s,
-                should_apply_control_torques=True,
+            dt = self.control_period_s
+            times = np.arange(0, self.max_duration_s + dt, dt)
+            waypoint_times = np.asarray([0, self.max_duration_s / 2, self.max_duration_s])
+            waypoints = np.stack([self.q_initial_rad, (self.q_initial_rad + self.q_desired_rad)/2, self.q_desired_rad], axis=1)
+
+            q_d_traj, qdot_d_traj, qddot_d_traj = eval_cubic_spline_traj(
+            times=times, waypoint_times=waypoint_times, waypoints=waypoints
             )
 
+            qdot_error = qdot_d_traj - qdot_rad_per_s
+            u = self.B_avg*qddot_d_traj + self.K_P*q_error + self.K_D*qdot_error
+
             # Convert torque control action into a PWM command using model of dynamixel motors
-            pwm_command = self.motor_model.calc_pwm_command(control_torques)
+            pwm_command = self.motor_model.calc_pwm_command(u)
 
             # Sending joint PWM commands 
             self.motor_group.pwm = {
@@ -213,11 +215,6 @@ if __name__ == "__main__":
     # 3) Replace the corresponding `...` with the IDs of the dynamixel motors used in
     #    your manipulator.
     # ----------------------------------------------------------------------------------
-    # A Python list with two elements representing the initial joint configuration
-    q_initial = [..., ...]
-
-    # A Python list with two elements representing the desired joint configuration
-    q_desired = [..., ...]
 
     # A numpy array of shape (2, 2) representing the proportional gains of your
     # controller
@@ -225,11 +222,6 @@ if __name__ == "__main__":
 
     # A numpy array of shape (2, 2) representing the derivative gains of your controller
     K_D = ...
-
-    # # A tuple with two elements representing the IDs of the dynamixels used in your
-    # manipulator
-    # ----------------------------------------------------------------------------------
-
 
     # ----------------------------------------------------------------------------------
     # Create `DynamixelIO` object to store the serial connection to U2D2
@@ -255,24 +247,30 @@ if __name__ == "__main__":
 
     motor_group = motor_factory.create(*dynamixel_ids)
 
-    # Make controller
-    controller = PDwGravityCompensationController(
-        motor_group=motor_group,
-        K_P=K_P,
-        K_D=K_D,
-        q_initial_deg=q_initial,
-        q_desired_deg=q_desired
-    )
-    # ----------------------------------------------------------------------------------
+    while
+        # Get joint angles
+        q_initial = np.asarray(list(self.motor_group.angle_rad.values()))
+        q_desired = # Get from ball position
+        
+        # Make controller
+        controller = InverseDynamicsController(
+            motor_group=motor_group,
+            K_P=K_P,
+            K_D=K_D,
+            q_initial_deg=q_initial,
+            q_desired_deg=q_desired
+        )
 
-    # Run controller
-    controller.start_control_loop()
+        # Run controller
+        controller.start_control_loop()
+
+        # Motor code to hit the ball with fixed force
 
     # Extract results
     time_stamps = np.asarray(controller.time_stamps)
     joint_positions = np.rad2deg(controller.joint_position_history).T
 
-
+"""
     # ----------------------------------------------------------------------------------
     # Plot Results
     # TODO: Section 5 (Plotting Joint Position Time Histories)
@@ -347,3 +345,4 @@ if __name__ == "__main__":
     fig.savefig(fig_file_name)
     # ----------------------------------------------------------------------------------
     plt.show()
+"""
