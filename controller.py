@@ -52,13 +52,13 @@ class InverseDynamicsController:
         # ------------------------------------------------------------------------------
         # Manipulator Parameters
         # ------------------------------------------------------------------------------
-        self.a_1 = self.a_2 = 1
-        self.l_1 = self.l_2 = 0.5
-        self.m_l1 = self.m_l2 = 9
-        self.I_l1 = self.I_l2 = 3
-        self.m_m1 = self.m_m2 = 1
-        self.I_m1 = self.I_m2 = 0.007
-        self.k_r1 = self.k_r2 = 50
+        self.a_1 = self.a_2 = 
+        self.l_1 = self.l_2 = 
+        self.m_l1 = self.m_l2 = 
+        self.I_l1 = self.I_l2 = 
+        self.m_m1 = self.m_m2 = 
+        self.I_m1 = self.I_m2 = 
+        self.k_r1 = self.k_r2 = 
         # ------------------------------------------------------------------------------
 
 
@@ -74,8 +74,8 @@ class InverseDynamicsController:
         # ------------------------------------------------------------------------------
         # Gain Matrices
         # ------------------------------------------------------------------------------
-        self.K_p = np.diag([10000, 10000])
-        self.K_d = np.diag([2000, 2000])
+        self.K_P = np.diag([, ])
+        self.K_D = np.diag([, ])
         # ------------------------------------------------------------------------------
 
 
@@ -111,7 +111,6 @@ class InverseDynamicsController:
         # ------------------------------------------------------------------------------
         
     def start_control_loop(self):
-        self.go_to_home_configuration()
 
         start_time = time.time()
         while self.should_continue:
@@ -137,15 +136,14 @@ class InverseDynamicsController:
 
             # Calculate control action
             # --------------------------------------------------------------------------
-            gravity_comp_torques = self.calc_gravity_compensation_torque(q_rad)
 
             t, (q_d, q), (qdot_d, qdot), control_torques, diagram = run_simulation(
                 q_initial=self.q_initial_rad,
                 q_final=self.q_desired_rad,
                 B_avg=self.B_avg,
-                K_p=self.K_p,
-                K_d=self.K_d,
-                simulation_duration_s=2,
+                K_p=self.K_P,
+                K_d=self.K_D,
+                simulation_duration_s=self.max_duration_s,
                 should_apply_control_torques=True,
             )
 
