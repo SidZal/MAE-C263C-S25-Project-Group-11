@@ -208,20 +208,11 @@ class InverseDynamicsController:
 
 if __name__ == "__main__":
     # ----------------------------------------------------------------------------------
-    # TODO: Tuning Controller Gains and Plot (Question 5)
-    # 1) Replace the corresponding `...` values with the initial and desired joint
-    #    configurations.
-    # 2) Replace the corresponding `...` values with your K_P and K_D gain matrices
-    # 3) Replace the corresponding `...` with the IDs of the dynamixel motors used in
-    #    your manipulator.
+    # Tuning Controller Gains
     # ----------------------------------------------------------------------------------
 
-    # A numpy array of shape (2, 2) representing the proportional gains of your
-    # controller
-    K_P = ...
-
-    # A numpy array of shape (2, 2) representing the derivative gains of your controller
-    K_D = ...
+    K_P = self.K_P
+    K_D = self.K_D
 
     # ----------------------------------------------------------------------------------
     # Create `DynamixelIO` object to store the serial connection to U2D2
