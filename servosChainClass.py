@@ -13,7 +13,6 @@ class servos():
             :param dynamixel_ids: list of IDs
             :param num_motors: if ^ not provided, provide num motors and assume sequential IDs
         """
-        print("Initializing Servos Low-Level Control")
 
         # Motor Addresses and Constants, see https://emanual.robotis.com/docs/en/dxl/mx/mx-28-2/
         self.PROTOCOL_VERSION            = 2.0
@@ -42,7 +41,7 @@ class servos():
             self.motor_ids = dynamixel_ids 
         else:
             # sequential motor ids [1, 2, ..., n]
-            self.motor_ids = 1 * num_motors + list(range(num_motors)) 
+            self.motor_ids = list(range(1, num_motors+1))
         
         self.num_motors = len(self.motor_ids)
 
@@ -66,7 +65,7 @@ class servos():
         # Enable torque
         self._torque_enable(1)
 
-        print("Initialization Complete")
+        print("Initialized Servo Controller")
             
     def __del__(self):
         # Disable torque
@@ -108,7 +107,7 @@ class servos():
         for id in self.motor_ids:
             self.groupBulkRead.addParam(id, addr, size)
 
-        result = self.groupBulkRead.rxPacket()
+        result = self.groupBulkRead.txRxPacket()
         self._validate(result)
 
         val = []
@@ -120,27 +119,32 @@ class servos():
         return val
 
     def read_position(self):
-        q = self._read_address(self.ADDR_PRESENT_VELOCITY)
+        q = self._read_address(self.ADDR_PRESENT_POSITION)
 
         # Convert motor scale to radians
         for i in range(self.num_motors):
             q[i] = 2*np.pi*((q[i] - self.DXL_MINIMUM_POSITION_VALUE) / self.DXL_MAXIMUM_POSITION_VALUE)
 
-        return np.diag(q)
+        return q
     
     def read_velocity(self):
         qd = self._read_address(self.ADDR_PRESENT_VELOCITY)
 
-        # Convert ??? to radians
+        # Convert ??? to radians/s
         for i in range(self.num_motors):
-            qd[i] = qd[i]
+            # bits adn signs are weird
+            if qd[i] > 0x7fffffff:
+                qd[i] -= 4294967296
 
-        return np.diag(qd)
+            # Convert from 0.229 rev/min to rad/s
+            qd[i] = qd[i] * 0.229 * 2 * np.pi / 60
+
+        return qd
     
-    def set_pwm(self, pwm: List[int]):
+    def set_pwm(self, pwm: list):
         for j in range(self.num_motors):
             id = self.motor_ids[j]
-            iter_pwm = pwm[j]
+            iter_pwm = int(pwm[j])
 
             if abs(iter_pwm) > self.DXL_PWM_LIMIT:
                 iter_pwm = int(np.sign(iter_pwm) * self.DXL_PWM_LIMIT)

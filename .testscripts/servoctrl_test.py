@@ -10,7 +10,7 @@ PORT = "/dev/ttyUSB0"
 
 mtrs = servos(PORT, num_motors=2)
 
-pwmtest = 0
+pwmtest = 100
 
 mtrs.set_pwm([pwmtest, pwmtest])
 

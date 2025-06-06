@@ -30,6 +30,7 @@ class cameraModule:
         self.ball_radius = ball_radius
 
         self.frame = None
+        self.mask = None
         self.last_time = time.perf_counter_ns()
 
         self.height = int(self.cam.get(cv.CAP_PROP_FRAME_HEIGHT))
@@ -71,6 +72,7 @@ class cameraModule:
             mask = cv.inRange(hsv, self.color[0], self.color[1])
             mask = cv.erode(mask, None, iterations=2)
             mask = cv.dilate(mask, None, iterations=2)
+            self.mask = mask
 
             # Find largest contour: largest swath of white mask
             cntrs = cv.findContours(mask.copy(), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
@@ -218,6 +220,7 @@ class cameraModule:
 
         # Show playback
         cv.imshow("Camera", self.frame)
+        cv.imshow("Mask", self.mask)
 
         # kill key q
         return not cv.waitKey(1) == ord('q')

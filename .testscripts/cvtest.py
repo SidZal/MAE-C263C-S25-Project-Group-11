@@ -7,12 +7,13 @@ from camera import cameraModule
 
 # Color bounds
 pink = [(150, 50, 20), (170, 255, 255)]
+purple = [(150, 50, 20), (180, 255, 255)]
 red = [] # Red wraps around Hue value, and that makes it harder </3
 
-cam = cameraModule(4, pink, 400, 10)
+cam = cameraModule(4, purple, 400, 10)
 
 while True:
     if cam.find_ball():
-        cam.predict_path()
+        cam.predict_path(dt=0.1)
         if not cam.playback():
             break
