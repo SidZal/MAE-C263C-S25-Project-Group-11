@@ -78,8 +78,6 @@ class InverseDynamicsController:
         signal.signal(signal.SIGTERM, self.signal_handler)
         # ------------------------------------------------------------------------------
         
-    def control_step(self):
-
     def start_control_loop(self):
 
         start_time = time.time()

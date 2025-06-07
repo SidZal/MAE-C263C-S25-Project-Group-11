@@ -17,22 +17,18 @@ class servos():
         # Motor Addresses and Constants, see https://emanual.robotis.com/docs/en/dxl/mx/mx-28-2/
         self.PROTOCOL_VERSION            = 2.0
         self.BAUDRATE                    = 57600
+
         self.ADDR_TORQUE_ENABLE          = 64
         self.ADDR_OPERATING_MODE         = 11
-        # self.ADDR_PROFILE_ACCELERATION   = 108
-        # self.ADDR_PROFILE_VELOCITY       = 112
-        # self.ADDR_GOAL_POSITION          = 116
         self.ADDR_PRESENT_POSITION       = 132
         self.ADDR_PRESENT_VELOCITY       = 128
         self.ADDR_GOAL_PWM               = 100
-        # self.ADDR_HOMING_OFFSET          = 20
+
         self.PWM_MODE = 16
         self.DXL_MINIMUM_POSITION_VALUE  = 0 
         self.DXL_MAXIMUM_POSITION_VALUE  = 4095
-
         self.DXL_PWM_LIMIT = 885
         self.DXL_VELOCITY_LIMIT = 230
-        # self.BYTE_LEN                    = 4
 
         # Determine motor ids
         self.motor_ids = None
