@@ -2,7 +2,7 @@ import cv2 as cv
 import numpy as np
 import imutils
 import time
-
+from typing import Tuple
 from numpy.typing import NDArray
 
 def rolling_add(arr, obj):
@@ -14,22 +14,33 @@ class cameraModule:
     """
     Class for handling camera and cv calls
     """
-    def __init__(self, capture, color_bounds, arena_height, ball_radius, position_rolling_mean_range = 3, velocity_rolling_mean_range = 5, endpoint_rolling_mean_range = 5):
-        """
-        :param capture: opencv capture port, usually 0
-        :param color_bounds: 2D tuple of 2 HSV values
-        :param arena_height: height of arena
-        :param ball_radius: radius of ball
-        """
+    def __init__(
+        self, 
+        capture: int, 
+        color_bounds: list[tuple], # list of 2 HSV (tuple) values
+        arena_height: int, # px
+        ball_radius: int, # px
+        meters_per_px_x: float, # m
+        meters_per_px_y: float, # m
+        bot_offset: float, # m
+        position_rolling_mean_range = 3, 
+        velocity_rolling_mean_range = 5, 
+        endpoint_rolling_mean_range = 5
+    ):
         try:
             self.cam = cv.VideoCapture(capture)
         except:
             print("No camera found.")
+            time.sleep(5)
 
         self.color = color_bounds
         
         self.arena_height = arena_height
         self.ball_radius = ball_radius
+
+        self.meters_per_px_x = meters_per_px_x
+        self.meters_per_px_y = meters_per_px_y
+        self.bot_offset = bot_offset
 
         self.frame = None
         self.mask = None
@@ -54,6 +65,37 @@ class cameraModule:
         self.ball_endpoint = None
 
         self.bot_radius = 20
+
+    # convert from Camera Frame (pixels) to Bot Frame (meters)
+    def _cam_to_bot(self, position: Tuple[int] = None, velocity: Tuple[int] = None):
+        pos_m = np.zeros(2, dtype = np.double) # m
+        vel_m_s = np.zeros(2, dtype = np.double) # m/s
+        
+        if position:
+            pos_m[0] = position[0] * self.meters_per_px_x + self.bot_offset
+            pos_m[1] = position[1] * self.meters_per_px_y
+
+        if velocity:
+            vel_m_s[0] = velocity[0] * self.meters_per_px_x 
+            vel_m_s[1] = velocity[1] * self.meters_per_px_y 
+
+        return pos_m, vel_m_s
+    
+    # convert from Bot Frame (meters) to Camera Frame (pixels)
+    def _bot_to_cam(self, position: NDArray[np.double] = None, velocity: NDArray[np.double] = None):
+        pos_px = np.zeros(2, dtype = int) # m
+        vel_px_s = np.zeros(2, dtype = int) # m/s
+        
+        if position:
+            pos_px[0] = (position[0] - self.bot_offset) / self.meters_per_px_x 
+            pos_px[1] = position[1] / self.meters_per_px_y
+
+        if velocity:
+            vel_px_s[0] = velocity[0] / self.meters_per_px_x 
+            vel_px_s[1] = velocity[1] / self.meters_per_px_y 
+
+        return pos_px, vel_px_s
+            
 
     def clear_predicted_path(self):
         self.ball_predicted_path = np.zeros((0, 3), dtype = int)
@@ -129,8 +171,7 @@ class cameraModule:
         :param dt: delta time, time resolution
         """
         # Init possible returns
-        ball_dir = None
-        time_to_endpoint = None
+        endpoint_meters = ball_dir = time_to_endpoint = None
 
         # Check if ball found
         if self.ball_pos is not None and self.ball_vel is not None:
@@ -196,7 +237,12 @@ class cameraModule:
                     self.ball_endpoint = np.mean(self.ball_endpoint_rolling, axis=0, dtype=int)
                     ball_dir = np.asarray([-vx, -vy])
 
-        return self.ball_endpoint, ball_dir, time_to_endpoint
+                    endpoint_meters, ball_dir = self._cam_to_bot(
+                        position = self.ball_endpoint,
+                        velocity = ball_dir
+                    )
+
+        return endpoint_meters, ball_dir, time_to_endpoint
 
     def playback(self, bot_pos: NDArray[np.double] = None, bot_pos_d: NDArray[np.double] = None):
         '''
@@ -208,9 +254,11 @@ class cameraModule:
 
         # Draw bot and desired
         if bot_pos:
+            bot_pos, _ = self._bot_to_cam(position = bot_pos)
             cv.circle(self.frame, bot_pos, self.bot_radius, (184, 255, 255), 1)
 
         if bot_pos_d:
+            bot_pos_d, _ = self._bot_to_cam(position = bot_pos_d)
             cv.circle(self.frame, bot_pos_d, self.bot_radius, (57, 255, 255), 1)
 
         if self.ball_pos is not None:
