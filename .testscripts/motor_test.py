@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
     # Get joint angles
     q_initial = [270, 270]
-    q_desired = [270, 270]
+    q_desired = [240, 330]
     
     # Make controller
     controller = InverseDynamicsController(

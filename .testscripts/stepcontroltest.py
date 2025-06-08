@@ -11,6 +11,7 @@ from scipy.interpolate import CubicSpline
 
 from stepcontroller import inverseDynamicsControl
 from servosChainClass import servos
+from fixedFrequencyLoopManager import fixedFrequencyLoopManager
 
 motors = servos(port='/dev/ttyUSB0', num_motors=2)
 
@@ -25,42 +26,70 @@ controller = inverseDynamicsControl(
             gear_ratio=(193, 193)
         )
 
-q_final = np.deg2rad([45, 45])
+loop_manager = fixedFrequencyLoopManager(30.0)
 
-start_time = time.time()
+# q_final = np.asarray(motors.read_position())
+q_final = np.deg2rad([240, 330])
+
 end_time = 3
-times = [0.]
-joint_positions = np.asarray(motors.read_position)
+joint_positions = [motors.read_position()]
+control_period = 1/30.0
 
-while times[-1] < end_time:
-    q = motors.read_position()
+# spl = CubicSpline(
+#     x = [0, end_time + .2],
+#     y = np.asarray([joint_positions[0], q_final]).T,
+#     axis = 1,
+#     bc_type = ((1, np.zeros(2)), (1, np.zeros(2)))
+# )
+
+times = [0.]
+start_time = time.time()
+
+while times[-1] < end_time - 1:
+    q = np.asarray(motors.read_position())
     qdot = motors.read_velocity()
 
+    times.append(time.time() - start_time)
+    joint_positions.append(q)
+
     spl = CubicSpline(
-        x = [times[-1], end_time],
-        y = [q, q_final],
+        x = [times[-1], (times[-1] + end_time) / 2, end_time],
+        y = np.asarray([q, (q+q_final) / 2 ,q_final]).T,
+        # x = [times[-1], end_time],
+        # y = np.asarray([q, q_final]).T,
         axis = 1,
-        bc_type = ((1, qdot), (1, np.zeros(2)))
+        bc_type = "clamped"
+        # bc_type = ((1, qdot), (1, np.zeros(2)))
     )
+
+    print(f"{q=}")
+    print(f"{qdot=}")
+    print(f"{spl(control_period, 1)=}")
+    print(f"{spl(control_period, 2)=}")
 
     u = controller.control_step(
         q=q,
         qdot=qdot,
-        q_d=spl(times[-1]),
-        qdot_d=spl(times[-1], 1),
-        qddot_d=spl(times[-1], 2)
+        q_d=q_final,
+        qdot_d=spl(control_period, 1),
+        qddot_d=spl(control_period, 2)
     ) 
 
+    print(f"{u=}")
     motors.set_pwm(u)
-    
-    times.append(time.time() - start_time)
-    np.append(joint_positions, q)
 
-    time.sleep(1/30)
+    # Helps while loop run at a fixed frequency
+    loop_manager.sleep()
+    # time.sleep(control_period)
+
+motors._torque_enable(0)
 
 # Extract results
 time_stamps = np.asarray(times)
 joint_positions = np.rad2deg(joint_positions).T
+
+print(f"{time_stamps=}")
+print(f"{joint_positions=}")
 
 # Create figure and axes
 fig = plt.figure(figsize=(10, 5))

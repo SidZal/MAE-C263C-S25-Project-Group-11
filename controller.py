@@ -62,15 +62,15 @@ class InverseDynamicsController:
 
         self.motors = motors
 
-        # Compute desired cubic spline trajectory
-        dt = self.control_period_s
-        times = np.arange(0, self.max_duration_s + dt, dt)
-        waypoint_times = np.asarray([0, self.max_duration_s / 2, self.max_duration_s])
-        waypoints = np.stack([self.q_initial_rad, (self.q_initial_rad + self.q_desired_rad)/2, self.q_desired_rad], axis=1)
+        # # Compute desired cubic spline trajectory
+        # dt = self.control_period_s
+        # times = np.arange(0, self.max_duration_s + dt, dt)
+        # waypoint_times = np.asarray([0, self.max_duration_s / 2, self.max_duration_s])
+        # waypoints = np.stack([self.q_initial_rad, (self.q_initial_rad + self.q_desired_rad)/2, self.q_desired_rad], axis=1)
 
-        self.q_d_traj, self.qdot_d_traj, self.qddot_d_traj = self.eval_cubic_spline_traj(
-        times=times, waypoint_times=waypoint_times, waypoints=waypoints
-        )
+        # self.q_d_traj, self.qdot_d_traj, self.qddot_d_traj = self.eval_cubic_spline_traj(
+        # times=times, waypoint_times=waypoint_times, waypoints=waypoints
+        # )
 
         # Clean Up / Exit Handler Code
         # ------------------------------------------------------------------------------
@@ -101,10 +101,6 @@ class InverseDynamicsController:
                 self.stop()
                 return
 
-            # Compute joint position error
-            q_error = self.q_desired_rad - q_rad
-            print(f"{q_error=}")
-
             # Compute desired cubic spline trajectory
             dt = self.control_period_s
             times = np.arange(elapsed, self.max_duration_s + dt, dt)
@@ -113,8 +109,12 @@ class InverseDynamicsController:
             print(f"{waypoint_times=}")
 
             self.q_d_traj, self.qdot_d_traj, self.qddot_d_traj = self.eval_cubic_spline_traj(
-            times=times, waypoint_times=waypoint_times, waypoints=waypoints
+            times=times, waypoint_times=waypoint_times, waypoints=waypoints, elapsed=elapsed
             )
+
+            # Compute joint position error
+            q_error = self.q_desired_rad - q_rad
+            print(f"{q_error=}")
 
             # index_traj = int(elapsed/self.max_duration_s * np.shape(self.q_d_traj)[1])
             index_traj = 1
@@ -124,18 +124,22 @@ class InverseDynamicsController:
             # print(f"{qddot_d_traj=}")
 
             # Compute joint velocity error
-            qdot_error = self.qdot_d_traj[:, index_traj] - qdot_rad_per_s
-            print(f"{self.qdot_d_traj[:, index_traj]=}")
-            print(f"{self.qddot_d_traj[:, index_traj]=}")
+            # qdot_error = self.qdot_d_traj[:, index_traj] - qdot_rad_per_s
+            # print(f"{self.qdot_d_traj[:, index_traj]=}")
+            # print(f"{self.qddot_d_traj[:, index_traj]=}")
+            qdot_error = self.qdot_d_traj - qdot_rad_per_s
+            print(f"{qdot_error=}")
+            print(f"{self.qdot_d_traj=}")
+            print(f"{self.qddot_d_traj=}")
 
 
             # Calculate control action
-            print(f"{self.B_avg=}")
-            u = self.B_avg*(self.qddot_d_traj[:, index_traj] + self.K_P*q_error + self.K_D*qdot_error)
+            # print(f"{self.B_avg=}")
+            u = self.B_avg*(self.qddot_d_traj + self.K_P*q_error + self.K_D*qdot_error)
             # u = [[0, 0], [0, 0]]
 
             print(f"{u=}")
-            self.motors.set_pwm(np.diag(u))
+            # self.motors.set_pwm(np.diag(u))
 
             # Helps while loop run at a fixed frequency
             self.loop_manager.sleep()
@@ -155,6 +159,7 @@ class InverseDynamicsController:
         times: NDArray[np.double],
         waypoint_times: NDArray[np.double],
         waypoints: NDArray[np.double],
+        elapsed
     ) -> tuple[NDArray[np.double], NDArray[np.double], NDArray[np.double]]:
         times = np.asarray(times, dtype=np.double)
         waypoint_times = np.asarray(waypoint_times, dtype=np.double)
@@ -173,6 +178,8 @@ class InverseDynamicsController:
         # ax3.plot(times, spl(times,2)[0])
         # ax3.plot(times, spl(times,2)[1])
 
-        # fig.show()
+        # plt.show()
+        t = self.control_period_s
+        # print(f"{t=}")
 
-        return spl(times), spl(times, 1), spl(times, 2)
+        return spl(t), spl(t, 1), spl(t, 2)
