@@ -1,4 +1,5 @@
-from typing import Tuple
+from numpy.typing import NDArray
+import numpy as np
 
 # Project modules
 from camera import cameraModule
@@ -32,31 +33,34 @@ purple = [(150, 50, 20), (180, 255, 255)] # ball color to look for
 cam = cameraModule(CAM_PORT, purple, arena_height=400, ball_radius=10)
 
 
-def px_to_mtr(arr: Tuple[int]):
-    return (METERS_PER_PX_X*arr[0], METERS_PER_PX_Y*arr[1])
+def px_to_mtr(arr: NDArray[np.double]):
+    return np.asarray((METERS_PER_PX_X*arr[0], METERS_PER_PX_Y*arr[1]))
+
+def mtr_to_px(arr: NDArray[np.double]):
+    return np.asarray((METERS_PER_PX_X*arr[0] - BOT_OFFSET, METERS_PER_PX_Y*arr[1]))
 
 
 continue_game = True
 while continue_game:
     # Sense: determine desired position, velocity, acceleration
-
-    # Look for ball pos
     if cam.find_ball(dt=0.1):
 
         # get endpoint (x,y) in pixels
-        endpoint = cam.predict_path()
+        predicted_endpoint, predicted_dir, predicted_time = cam.predict_path()
 
-        if endpoint:            
+        if predicted_endpoint:            
             # Convert endpoint to m, add origin offset
-            endpoint = px_to_mtr(endpoint)
-            endpoint[0] += BOT_OFFSET
+            predicted_endpoint = px_to_mtr(predicted_endpoint)
+            predicted_endpoint[0] += BOT_OFFSET
 
-        bot.update_endpoint(endpoint)
+            predicted_dir = px_to_mtr(predicted_dir)
+
+            bot.update_endpoint(predicted_endpoint, predicted_dir, predicted_time)
 
     # Control: take control step
-    bot.step()
+    pos, pos_d = bot.step()
 
     # Monitor: display system's actions on camera view
-    if not cam.playback():
+    if not cam.playback(mtr_to_px(pos), mtr_to_px(pos_d)):
         break
 

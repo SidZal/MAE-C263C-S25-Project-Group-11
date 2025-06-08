@@ -3,6 +3,8 @@ import numpy as np
 import imutils
 import time
 
+from numpy.typing import NDArray
+
 def rolling_add(arr, obj):
     arr = np.delete(arr, 0, axis=0)
     arr = np.append(arr, [obj], axis=0)
@@ -50,6 +52,8 @@ class cameraModule:
 
         self.ball_endpoint_rolling = np.zeros((endpoint_rolling_mean_range, 2), dtype=int)
         self.ball_endpoint = None
+
+        self.bot_radius = 20
 
     def clear_predicted_path(self):
         self.ball_predicted_path = np.zeros((0, 3), dtype = int)
@@ -124,6 +128,11 @@ class cameraModule:
         :param epsr: epsilon r, % of reach to watch for ball cross
         :param dt: delta time, time resolution
         """
+        # Init possible returns
+        ball_dir = None
+        time_to_endpoint = None
+
+        # Check if ball found
         if self.ball_pos is not None and self.ball_vel is not None:
             [bx, by] = self.ball_pos
 
@@ -142,7 +151,9 @@ class cameraModule:
 
             # Ensure ball is coming towards robot with significant velocity
             if (vx < 0) and (vx**2 + vy**2 > 50**2):
-                # TODO improve this loop termination condition: where to predict until?
+                time_to_endpoint = 0
+
+                # Threshold for path
                 while bx > 50:
                     # Calculate incoming ball position differentials
                     dx = vx*dt
@@ -176,22 +187,31 @@ class cameraModule:
                     # Store prediction step
                     self.ball_predicted_path = np.append(self.ball_predicted_path, np.array([[bx, by, bounds_violation]]), axis=0)
 
-                # TODO: Improve determination of desired position rather than just the end of the predicted path
+                    time_to_endpoint += dt
+
                 if np.size(self.ball_predicted_path) == 0:
                     self.ball_endpoint = None
                 else:
                     self.ball_endpoint_rolling = rolling_add(self.ball_endpoint_rolling, self.ball_predicted_path[-1][0:2])
                     self.ball_endpoint = np.mean(self.ball_endpoint_rolling, axis=0, dtype=int)
+                    ball_dir = np.asarray([-vx, -vy])
 
-        return self.ball_endpoint
+        return self.ball_endpoint, ball_dir, time_to_endpoint
 
-    def playback(self):
+    def playback(self, bot_pos: NDArray[np.double] = None, bot_pos_d: NDArray[np.double] = None):
         '''
         Optional playback to show ball tracking and path prediction
         '''
         # Draw arena
         cv.line(self.frame, (0, int(self.height/2 + self.arena_height/2)), (self.width, int(self.height/2 + self.arena_height/2)), 0, 4)
         cv.line(self.frame, (0, int(self.height/2 - self.arena_height/2)), (self.width, int(self.height/2 - self.arena_height/2)), 0, 4)
+
+        # Draw bot and desired
+        if bot_pos:
+            cv.circle(self.frame, bot_pos, self.bot_radius, (184, 255, 255), 1)
+
+        if bot_pos_d:
+            cv.circle(self.frame, bot_pos_d, self.bot_radius, (57, 255, 255), 1)
 
         if self.ball_pos is not None:
             # Draw circle about ball 
