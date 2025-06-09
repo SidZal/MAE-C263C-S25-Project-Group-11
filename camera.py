@@ -20,9 +20,10 @@ class cameraModule:
         color_bounds: list[tuple], # list of 2 HSV (tuple) values
         arena_height: int, # px
         ball_radius: int, # px
-        meters_per_px_x: float, # m
-        meters_per_px_y: float, # m
-        bot_offset: float, # m
+        px_per_meter_x: int = 1200, # px/m
+        px_per_meter_y: int = 1200, # px/m
+        bot_offset: float = 0.08, # m
+        height_scale: float = 0.6,
         position_rolling_mean_range = 3, 
         velocity_rolling_mean_range = 5, 
         endpoint_rolling_mean_range = 5
@@ -38,9 +39,10 @@ class cameraModule:
         self.arena_height = arena_height
         self.ball_radius = ball_radius
 
-        self.meters_per_px_x = meters_per_px_x
-        self.meters_per_px_y = meters_per_px_y
+        self.px_per_meter_x = px_per_meter_x
+        self.px_per_meter_y = px_per_meter_y
         self.bot_offset = bot_offset
+        self.height_scale = height_scale
 
         self.frame = None
         self.mask = None
@@ -64,20 +66,20 @@ class cameraModule:
         self.ball_endpoint_rolling = np.zeros((endpoint_rolling_mean_range, 2), dtype=int)
         self.ball_endpoint = None
 
-        self.bot_radius = 20
+        self.bot_radius = 50
 
     # convert from Camera Frame (pixels) to Bot Frame (meters)
     def _cam_to_bot(self, position: Tuple[int] = None, velocity: Tuple[int] = None):
         pos_m = np.zeros(2, dtype = np.double) # m
         vel_m_s = np.zeros(2, dtype = np.double) # m/s
         
-        if position:
-            pos_m[0] = position[0] * self.meters_per_px_x + self.bot_offset
-            pos_m[1] = position[1] * self.meters_per_px_y
+        if position is not None:
+            pos_m[0] = position[0] / self.px_per_meter_x + self.bot_offset
+            pos_m[1] = - (position[1] - self.height_scale*self.height) / self.px_per_meter_y
 
-        if velocity:
-            vel_m_s[0] = velocity[0] * self.meters_per_px_x 
-            vel_m_s[1] = velocity[1] * self.meters_per_px_y 
+        if velocity is not None:
+            vel_m_s[0] = velocity[0] / self.px_per_meter_x 
+            vel_m_s[1] = -velocity[1] / self.px_per_meter_y 
 
         return pos_m, vel_m_s
     
@@ -86,13 +88,13 @@ class cameraModule:
         pos_px = np.zeros(2, dtype = int) # m
         vel_px_s = np.zeros(2, dtype = int) # m/s
         
-        if position:
-            pos_px[0] = (position[0] - self.bot_offset) / self.meters_per_px_x 
-            pos_px[1] = position[1] / self.meters_per_px_y
+        if position is not None:
+            pos_px[0] = (position[0] - self.bot_offset) * self.px_per_meter_x
+            pos_px[1] = -position[1] * self.px_per_meter_y + self.height_scale*self.height 
 
-        if velocity:
-            vel_px_s[0] = velocity[0] / self.meters_per_px_x 
-            vel_px_s[1] = velocity[1] / self.meters_per_px_y 
+        if velocity is not None:
+            vel_px_s[0] = velocity[0] * self.px_per_meter_x 
+            vel_px_s[1] = -velocity[1] * self.px_per_meter_y 
 
         return pos_px, vel_px_s
             
@@ -253,18 +255,19 @@ class cameraModule:
         cv.line(self.frame, (0, int(self.height/2 - self.arena_height/2)), (self.width, int(self.height/2 - self.arena_height/2)), 0, 4)
 
         # Draw bot and desired
-        if bot_pos:
+        if bot_pos is not None:
             bot_pos, _ = self._bot_to_cam(position = bot_pos)
-            cv.circle(self.frame, bot_pos, self.bot_radius, (184, 255, 255), 1)
+            print(f"{bot_pos=}")
+            cv.circle(self.frame, bot_pos, self.bot_radius, (0, 255, 0), 3)
 
-        if bot_pos_d:
+        if bot_pos_d is not None:
             bot_pos_d, _ = self._bot_to_cam(position = bot_pos_d)
-            cv.circle(self.frame, bot_pos_d, self.bot_radius, (57, 255, 255), 1)
+            cv.circle(self.frame, bot_pos_d, self.bot_radius, (0, 255, 0), 2)
 
         if self.ball_pos is not None:
             # Draw circle about ball 
             cv.circle(self.frame, self.ball_pos, self.ball_radius_measured, self.color[1], 2)
-            cv.circle(self.frame, self.ball_pos, 5, (0, 0, 255), -1)
+            cv.circle(self.frame, self.ball_pos, 5, (0, 255, 255), -1)
 
             # Draw circle about smoothed endpoint
             if self.ball_endpoint is not None:
@@ -288,7 +291,7 @@ class cameraModule:
 
         # Show playback
         cv.imshow("Camera", self.frame)
-        cv.imshow("Mask", self.mask)
+        # cv.imshow("Mask", self.mask)
 
         # kill key q
         return not cv.waitKey(1) == ord('q')

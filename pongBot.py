@@ -66,6 +66,9 @@ class pongBot:
     @property
     def qdot(self):
         return np.asarray(self.motors.read_velocity(), dtype=np.double)
+    
+    def disable_torque(self):
+        self.motors._torque_enable(0)
 
     # External updater for endpoint
     def update_endpoint(self, endpoint: NDArray[np.double], dir: NDArray[np.double], time: float):

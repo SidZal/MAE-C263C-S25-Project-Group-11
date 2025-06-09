@@ -67,6 +67,9 @@ class servos():
         # Disable torque
         self._torque_enable(0)
 
+        # Return to position mode
+        self._set_operating_mode(3)
+
         # Close port
         self.portHandler.closePort()
 
@@ -119,7 +122,7 @@ class servos():
 
         # Convert motor scale to radians
         for i in range(self.num_motors):
-            q[i] = 2*np.pi*((q[i] - self.DXL_MINIMUM_POSITION_VALUE) / self.DXL_MAXIMUM_POSITION_VALUE)
+            q[i] = 2*np.pi*((q[i] - self.DXL_MINIMUM_POSITION_VALUE) / self.DXL_MAXIMUM_POSITION_VALUE) - np.pi
 
         return q
     
