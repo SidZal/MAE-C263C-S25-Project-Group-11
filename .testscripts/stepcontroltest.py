@@ -13,11 +13,11 @@ from stepcontroller import inverseDynamicsControl
 from servosChainClass import servos
 from fixedFrequencyLoopManager import fixedFrequencyLoopManager
 
-motors = servos(port='/dev/ttyUSB0', num_motors=2)
+motors = servos(port='/dev/ttyUSB0', num_motors=2, homing_offsets=[-901, -198])
 
 controller = inverseDynamicsControl(
-            K_P=np.diag([3.8, 3.8]),
-            K_D=np.diag([.11, .11]),
+            K_P=np.diag([3.2, 3]),
+            K_D=np.diag([.07, .09]),
             link_length=(0.15, 0.125),
             link_mass=(0.035, 0.035),
             link_inertia=(0.001, 0.001),
@@ -29,7 +29,7 @@ controller = inverseDynamicsControl(
 loop_manager = fixedFrequencyLoopManager(30.0)
 
 # q_final = np.asarray(motors.read_position())
-q_final = np.deg2rad([240, 330])
+q_final = np.deg2rad([0, 0])
 
 end_time = 3
 joint_positions = [motors.read_position()]
@@ -42,8 +42,12 @@ control_period = 1/30.0
 #     bc_type = ((1, np.zeros(2)), (1, np.zeros(2)))
 # )
 
-times = [0.]
+# time.sleep(5)
+# print("Now")
+
 start_time = time.time()
+times = [0.]
+
 
 while times[-1] < end_time - 1:
     q = np.asarray(motors.read_position())
@@ -52,8 +56,10 @@ while times[-1] < end_time - 1:
     times.append(time.time() - start_time)
     joint_positions.append(q)
 
+    time_to = end_time - times[-1]
+
     spl = CubicSpline(
-        x = [times[-1], (times[-1] + end_time) / 2, end_time],
+        x = [0, time_to/2, time_to],
         y = np.asarray([q, (q+q_final) / 2 ,q_final]).T,
         # x = [times[-1], end_time],
         # y = np.asarray([q, q_final]).T,
@@ -64,8 +70,8 @@ while times[-1] < end_time - 1:
 
     print(f"{q=}")
     print(f"{qdot=}")
-    print(f"{spl(control_period, 1)=}")
-    print(f"{spl(control_period, 2)=}")
+    print(f"{spl(times[-1] + control_period, 1)=}")
+    print(f"{spl(times[-1] + control_period, 2)=}")
 
     u = controller.control_step(
         q=q,

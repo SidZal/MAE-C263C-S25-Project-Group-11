@@ -33,7 +33,9 @@ bot = pongBot(
     motor_inertia=(0.007, 0.007),
     gear_ratio=(193, 193),
     K_P=np.diag([3.8, 3.8]),
-    K_D=np.diag([.11, .11])
+    K_D=np.diag([.11, .11]),
+    loop_freq=cam.get_freq(),
+    homing_offsets=[-901, -198]
 )
 
 # disable torque

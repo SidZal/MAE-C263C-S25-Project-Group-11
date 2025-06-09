@@ -3,7 +3,7 @@ from matplotlib import pyplot as plt
 import numpy as np
 
 spl = CubicSpline(
-    x=np.asarray([0, 5]), 
+    x=np.asarray([8, 13]), 
     y= np.asarray(([5, 1], [2, 2])).T, 
     axis = 1, 
     bc_type=((1, [-1, 0]), (1, np.zeros(2)))

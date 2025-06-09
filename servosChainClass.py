@@ -5,7 +5,12 @@ import numpy as np
 # Class suited for this project's needs, based on Dynamixel SDK example files
 # Not foolproof - assumes correct use of Dynamixel motors
 class servos():
-    def __init__(self, port: str, dynamixel_ids: List[int] = None, num_motors: int = 0):
+    def __init__(
+        self, 
+        port: str, dynamixel_ids: List[int] = None, 
+        num_motors: int = 0,
+        homing_offsets: List[int] = [0, 0]
+    ):
         """
             Servos control initialization
 
@@ -23,6 +28,7 @@ class servos():
         self.ADDR_PRESENT_POSITION       = 132
         self.ADDR_PRESENT_VELOCITY       = 128
         self.ADDR_GOAL_PWM               = 100
+        self.ADDR_HOMING_OFFSET          = 20
 
         self.PWM_MODE = 16
         self.DXL_MINIMUM_POSITION_VALUE  = 0 
@@ -57,6 +63,11 @@ class servos():
 
         # Set operation mode
         self._set_operating_mode(self.PWM_MODE)
+
+        # Set homing offsets
+        for mtr in range(self.num_motors):
+            result, error = self.packetHandler.write4ByteTxRx(self.portHandler, self.motor_ids[mtr], self.ADDR_HOMING_OFFSET, homing_offsets[mtr])
+            assert self._validate(result, error)
 
         # Enable torque
         self._torque_enable(1)

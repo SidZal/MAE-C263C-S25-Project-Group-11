@@ -20,10 +20,11 @@ class cameraModule:
         color_bounds: list[tuple], # list of 2 HSV (tuple) values
         arena_height: int, # px
         ball_radius: int, # px
-        px_per_meter_x: int = 1200, # px/m
-        px_per_meter_y: int = 1200, # px/m
+        endpoint_threshold: int = 50, # px 
+        px_per_meter_x: int = 1450, # px/m
+        px_per_meter_y: int = 1450, # px/m
         bot_offset: float = 0.08, # m
-        height_scale: float = 0.6,
+        height_scale: float = 0.5,
         position_rolling_mean_range = 3, 
         velocity_rolling_mean_range = 5, 
         endpoint_rolling_mean_range = 5
@@ -38,6 +39,7 @@ class cameraModule:
         
         self.arena_height = arena_height
         self.ball_radius = ball_radius
+        self.endpoint_threshold = endpoint_threshold
 
         self.px_per_meter_x = px_per_meter_x
         self.px_per_meter_y = px_per_meter_y
@@ -67,6 +69,9 @@ class cameraModule:
         self.ball_endpoint = None
 
         self.bot_radius = 50
+
+    def get_freq(self):
+        return 1 / self.cam.get(cv.CAP_PROP_FPS)
 
     # convert from Camera Frame (pixels) to Bot Frame (meters)
     def _cam_to_bot(self, position: Tuple[int] = None, velocity: Tuple[int] = None):
@@ -197,7 +202,7 @@ class cameraModule:
                 time_to_endpoint = 0
 
                 # Threshold for path
-                while bx > 50:
+                while bx > self.endpoint_threshold:
                     # Calculate incoming ball position differentials
                     dx = vx*dt
                     dy = vy*dt
@@ -257,12 +262,11 @@ class cameraModule:
         # Draw bot and desired
         if bot_pos is not None:
             bot_pos, _ = self._bot_to_cam(position = bot_pos)
-            print(f"{bot_pos=}")
-            cv.circle(self.frame, bot_pos, self.bot_radius, (0, 255, 0), 3)
+            cv.circle(self.frame, bot_pos, self.bot_radius, (45, 62, 247), 2)
 
         if bot_pos_d is not None:
             bot_pos_d, _ = self._bot_to_cam(position = bot_pos_d)
-            cv.circle(self.frame, bot_pos_d, self.bot_radius, (0, 255, 0), 2)
+            cv.circle(self.frame, bot_pos_d, self.bot_radius, (144, 255, 245), 1)
 
         if self.ball_pos is not None:
             # Draw circle about ball 

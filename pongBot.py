@@ -1,7 +1,7 @@
 import time
 import numpy as np
 from scipy.interpolate import CubicSpline
-from typing import Tuple
+from typing import Tuple, List
 from numpy.typing import NDArray
 
 from servosChainClass import servos
@@ -19,8 +19,9 @@ class pongBot:
         gear_ratio: Tuple[int],
         K_P: NDArray[np.double],
         K_D: NDArray[np.double],
+        loop_freq: float,
+        homing_offsets: List[int] = [0, 0],
         lost_endpoint_threshold: int = 3,
-        traj_padding: float = 0.2,
         flick_time: float = 0.15,
         flick_threshold: float = 0.1,
         flick_scale: float = 2
@@ -34,7 +35,7 @@ class pongBot:
         self.kr = gear_ratio
 
         # Project Modules
-        self.motors = servos(port=motors_port, num_motors=2)
+        self.motors = servos(port=motors_port, num_motors=2, homing_offsets=homing_offsets)
         self.controller = inverseDynamicsControl(
             K_P=K_P,
             K_D=K_D,
@@ -53,8 +54,8 @@ class pongBot:
 
         # Trajectory Management
         self.mode = 0 # Bot's mode management: 0 = Waiting, 1 = Ball Arrival, 2 = Flick Upon Ball Approach
+        self.loop_freq = loop_freq
         self.spl = None
-        self.traj_padding = traj_padding # time to pad trajectory to endpoint
         self.flick_time = flick_time # how long to spend flicking
         self.flick_threshold = flick_threshold # how close to start flick?
         self.flick_scale = flick_scale # how far to flick to?
@@ -73,28 +74,29 @@ class pongBot:
     # External updater for endpoint
     def update_endpoint(self, endpoint: NDArray[np.double], dir: NDArray[np.double], time: float):
         # Ignore updates during flick (mode 2)
-        if self.mode is not 2:
+        if self.mode != 2:
             self.endpoint = endpoint
             self.dir = dir
             self.time_to_endpoint = time
 
     # Private endpoint handler for when endpoint is processed
     def _reset_endpoint(self):
-        self.endpoint = self.dir = self.time_to_endpoint = None
+        self.dir = self.time_to_endpoint = None
         self.endpoint_lost_counter = 0
 
     def step(self):
         # Determine course of action
-        if self.mode is 0:
+        if self.mode == 0:
             # WAITING Mode: Don't care/know where ball is
             
             # Should we care?
-            if self.endpoint:
+            if self.endpoint is not None:
                 # Ball is coming! switch mode and start prep
                 self.mode = 1
-                self.spl = self._generate_trajectory(self.time_to_endpoint + self.traj_padding, self.endpoint)
 
-        elif self.mode is 1:
+                self.spl = self._generate_trajectory(0, self.time_to_endpoint, self.endpoint)
+
+        elif self.mode == 1:
             # PREPARE FOR BALL Mode: Ball is coming to bot
             
             # Check if still coming to bot
@@ -103,12 +105,14 @@ class pongBot:
                 # Check if should start flick
                 if self.time_to_endpoint < self.flick_threshold:
                     # Start flick!
+                    print("Flicking!")
                     self.mode = 2
 
-                    self.spl = self._generate_trajectory(self.flick_time, self.endpoint + self.flick_scale*self.dir)
                     self.flick_start = time.time()
+                    self.spl = self._generate_trajectory(0, self.flick_time, self.endpoint + self.flick_scale*self.dir)
+                    
                 else:
-                    self.spl = self._generate_trajectory(self.time_to_endpoint + self.traj_padding, self.endpoint)
+                    self.spl = self._generate_trajectory(0, self.time_to_endpoint, self.endpoint)
 
                 self._reset_endpoint()
             else:
@@ -117,25 +121,26 @@ class pongBot:
                 if self.endpoint_lost_counter > self.lost_endpoint_threshold:
                     self.mode = 0 # back to waiting...
 
-        elif self.mode is 2:
+        elif self.mode == 2:
             # FLICK Mode: Hit ball once it is close enough
 
             # Check if flick should end after this
-            time_since_traj_start = time.time() - self.flick_start
-            if time_since_traj_start > self.flick_time:
+            time_since_flick_start = time.time() - self.flick_start
+            flick_end = self.flick_time - time_since_flick_start
+            if flick_end <= 0:
                 self.mode = 0
-
-            self.spl = self._generate_trajectory(self.flick_time - time_since_traj_start, self.endpoint + self.flick_scale*self.dir)
+            else:
+                self.spl = self._generate_trajectory(0, flick_end, self.endpoint + self.flick_scale*self.dir)
                 
         # Control step
         q_actual = self.q
         qdot_actual = self.qdot
 
+        # print(f"{self.spl=}")
         if self.spl:
-            time_since_traj_start = time.time() - self.trajectory_start_time
-            q_d = self.spl(time_since_traj_start)
-            qdot_d = self.spl(time_since_traj_start, 1)
-            qddot_d = self.spl(time_since_traj_start, 2)
+            q_d = self.q_final
+            qdot_d = self.spl(self.loop_freq, 1)
+            qddot_d = self.spl(self.loop_freq, 2)
         else:
             q_d = q_actual
             qdot_d = qdot_actual
@@ -148,22 +153,27 @@ class pongBot:
             qdot_d=qdot_d,
             qddot_d=qddot_d
         )
-
+        # print(f"{u=}")
         self.motors.set_pwm(u)
 
-        return self._forward_kinematics(q_actual), self._forward_kinematics(q_d)
+        return self._forward_kinematics(q_actual), self.endpoint
     
-    def _generate_trajectory(self, end_time: float, end_point: NDArray[np.double]):
-        trajectory_end_angles = self._inverse_kinematics(end_point)
+    def _generate_trajectory(
+        self, 
+        start_time: float, 
+        end_time: float, 
+        end_point: NDArray[np.double]
+    ):
+        
+        self.q_final = self._inverse_kinematics(end_point)
+        qrad = self.q
 
-        # Prep waypoints for CubicSpline
-        time_vias = np.asarray(0, end_time)
-        joint_angles_vias = np.asarray(self.q, trajectory_end_angles)
-        joint_omegas_vias = ((1, self.qdot), (1, np.zeros(2)))
-
-        self.spl = CubicSpline(x=time_vias, y=joint_angles_vias, axis=1, bc_type=joint_omegas_vias)
-
-        self.trajectory_start_time = time.time()
+        return CubicSpline(
+            x=[start_time, (start_time + end_time)/2, end_time],
+            y=np.asarray([qrad, (qrad+self.q_final) / 2 ,self.q_final]).T,
+            axis=1, 
+            bc_type="clamped"
+        )
 
     def _inverse_kinematics(self, pos: NDArray[np.double], config: int = 1):
         '''
@@ -184,7 +194,7 @@ class pongBot:
         assert(r <= np.sum(self.l) and x > 0)
         
         th1 = np.arccos((self.l[0]**2 + r**2 - self.l[1]**2) / (2*self.l[0]*r)) + config * np.arctan2(y, x)
-        th2 = np.pi - np.arccos((self.l[0]**2 + self.l[1]**2 - r**2) / (2*self.l[0]*self.l[1]))
+        th2 = -config*(np.pi - np.arccos((self.l[0]**2 + self.l[1]**2 - r**2) / (2*self.l[0]*self.l[1])))
 
         return np.asarray((th1, th2))
 
