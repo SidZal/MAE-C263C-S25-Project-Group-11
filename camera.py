@@ -25,6 +25,7 @@ class cameraModule:
         px_per_meter_y: int = 1450, # px/m
         bot_offset: float = 0.08, # m
         height_scale: float = 0.5,
+        bot_radius: int = 50,
         position_rolling_mean_range = 3, 
         velocity_rolling_mean_range = 5, 
         endpoint_rolling_mean_range = 5
@@ -65,45 +66,61 @@ class cameraModule:
         self.ball_predicted_path = None
         self.clear_predicted_path()
 
-        self.ball_endpoint_rolling = np.zeros((endpoint_rolling_mean_range, 2), dtype=int)
-        self.ball_endpoint = None
+        self.endpoint_rolling = np.zeros((endpoint_rolling_mean_range, 2), dtype=int)
+        self.endpoint = None
+        self.time_to_endpoint = None
 
-        self.bot_radius = 50
+        self.bot_radius = bot_radius
 
     def get_freq(self):
         return 1 / self.cam.get(cv.CAP_PROP_FPS)
 
+    # get min and max y limits for bot
+    def get_arena_constraints(self):
+        max_y = (self.height - self.arena_height)/2 + self.bot_radius
+        min_y = (self.height + self.arena_height)/2 - self.bot_radius
+
+        max_bot_pos = self._cam_to_bot(position = (self.endpoint_threshold, max_y))
+        min_bot_pos = self._cam_to_bot(position = (self.endpoint_threshold, min_y))
+
+        return (min_bot_pos, max_bot_pos)
+
     # convert from Camera Frame (pixels) to Bot Frame (meters)
-    def _cam_to_bot(self, position: Tuple[int] = None, velocity: Tuple[int] = None):
-        pos_m = np.zeros(2, dtype = np.double) # m
-        vel_m_s = np.zeros(2, dtype = np.double) # m/s
-        
+    def _cam_to_bot(self, position: Tuple[int] = None, velocity: Tuple[int] = None):    
         if position is not None:
+            pos_m = np.zeros(2, dtype = np.double) # m
             pos_m[0] = position[0] / self.px_per_meter_x + self.bot_offset
             pos_m[1] = - (position[1] - self.height_scale*self.height) / self.px_per_meter_y
+        else:
+            pos_m = None
 
         if velocity is not None:
+            vel_m_s = np.zeros(2, dtype = np.double) # m/s
             vel_m_s[0] = velocity[0] / self.px_per_meter_x 
-            vel_m_s[1] = -velocity[1] / self.px_per_meter_y 
+            vel_m_s[1] = -velocity[1] / self.px_per_meter_y
+        else:
+            vel_m_s = None
 
         return pos_m, vel_m_s
     
     # convert from Bot Frame (meters) to Camera Frame (pixels)
     def _bot_to_cam(self, position: NDArray[np.double] = None, velocity: NDArray[np.double] = None):
-        pos_px = np.zeros(2, dtype = int) # m
-        vel_px_s = np.zeros(2, dtype = int) # m/s
-        
         if position is not None:
+            pos_px = np.zeros(2, dtype = int) # m
             pos_px[0] = (position[0] - self.bot_offset) * self.px_per_meter_x
             pos_px[1] = -position[1] * self.px_per_meter_y + self.height_scale*self.height 
+        else:
+            pos_px = None
 
         if velocity is not None:
+            vel_px_s = np.zeros(2, dtype = int) # m/s
             vel_px_s[0] = velocity[0] * self.px_per_meter_x 
             vel_px_s[1] = -velocity[1] * self.px_per_meter_y 
+        else:
+            vel_px_s = None
 
         return pos_px, vel_px_s
             
-
     def clear_predicted_path(self):
         self.ball_predicted_path = np.zeros((0, 3), dtype = int)
 
@@ -166,8 +183,51 @@ class cameraModule:
                 
         return ret
 
-    def predict_path(self, dt = 0.5):
-        """
+    def predict_path(self, dt:float = 0.5):
+        '''
+        Predicts path of ball until it hits a wall or reaches the endpoint threshold
+        '''
+        # Check if ball found
+        if self.ball_pos is not None and self.ball_vel is not None:
+            [bx, by] = self.ball_pos
+
+            # Take rolling average
+            [vx, vy] = self.ball_vel
+
+            # Absolute y max given arena bounds
+            y_max = self.arena_height/2
+            y_mid = self.height/2
+
+            # Reset ball path
+            self.clear_predicted_path()
+
+            # Ensure ball is coming towards robot with significant velocity
+            if (vx < 0) and (vx**2 + vy**2 > 50**2):
+                self.time_to_endpoint = 0
+                in_bounds = True
+
+                # Threshold for path
+                while bx > self.endpoint_threshold and in_bounds:
+                    # Calculate incoming ball position differentials
+                    dx = vx*dt
+                    dy = vy*dt
+
+                    in_bounds = y_mid - y_max + self.ball_radius < by + dy <  y_mid + y_max - self.ball_radius
+                    
+                    # New pos
+                    bx = int(bx + dx)
+                    by = int(by + dy)
+
+                    # Store prediction step
+                    self.ball_predicted_path = np.append(self.ball_predicted_path, np.array([[bx, by, 0]]), axis=0)
+                    self.time_to_endpoint += dt
+
+                if len(self.ball_predicted_path) != 0:
+                    self.endpoint_rolling = rolling_add(self.endpoint_rolling, self.ball_predicted_path[-1, 0:2])
+                    self.endpoint = np.mean(self.endpoint_rolling, axis=0)
+
+    def predict_path_perfect_collisions(self, dt:float = 0.5):
+        '''
         Casts ray from ball position w/ velocity vector
         to determine where ball will cross into some radius around
         the robot's base frame
@@ -176,10 +236,7 @@ class cameraModule:
 
         :param epsr: epsilon r, % of reach to watch for ball cross
         :param dt: delta time, time resolution
-        """
-        # Init possible returns
-        endpoint_meters = ball_dir = time_to_endpoint = ball_px_x = None
-
+        '''
         # Check if ball found
         if self.ball_pos is not None and self.ball_vel is not None:
             [bx, by] = self.ball_pos
@@ -200,7 +257,7 @@ class cameraModule:
 
             # Ensure ball is coming towards robot with significant velocity
             if (vx < 0) and (vx**2 + vy**2 > 50**2):
-                time_to_endpoint = 0
+                self.time_to_endpoint = 0
 
                 # Threshold for path
                 while bx > self.endpoint_threshold:
@@ -235,24 +292,28 @@ class cameraModule:
 
                     # Store prediction step
                     self.ball_predicted_path = np.append(self.ball_predicted_path, np.array([[bx, by, bounds_violation]]), axis=0)
+                    self.time_to_endpoint += dt
 
-                    time_to_endpoint += dt
+                    if len(self.ball_predicted_path) != 0:
+                        self.endpoint_rolling = rolling_add(self.endpoint_rolling, self.ball_predicted_path[-1, 0:2])
+                        self.endpoint = np.mean(self.endpoint_rolling, axis=0)
 
-                if bx < self.endpoint_threshold or np.size(self.ball_predicted_path) == 0:
-                    self.ball_endpoint = None
-                else:
-                    self.ball_endpoint_rolling = rolling_add(self.ball_endpoint_rolling, self.ball_predicted_path[-1][0:2])
-                    self.ball_endpoint = np.mean(self.ball_endpoint_rolling, axis=0, dtype=int)
-                    ball_dir = np.asarray([-vx, -vy])
+    def generate_bot_goal(self):
+        '''
+        Provides ball info for external use as Tuple with following balues
 
-                    endpoint_meters, ball_dir = self._cam_to_bot(
-                        position = self.ball_endpoint,
-                        velocity = ball_dir
-                    )
+        :returns cam_info[0], ball_pos: X,Y coords in meters: ball position
+        :returns cam_info[1], ball_endpoint: X, Y coords in meters: where ball is predicted to be heading
+        :returns cam_info[2], time_to_endpoint: time in seconds before ball reaches current endpoint
+        :returns cam_info[3], ball_vell: Vx,Vy coords in meters/s: ball velocity
+        '''
+        
+        ball_pos_m, ball_vel_ms = self._cam_to_bot(position=self.ball_pos, velocity=self.ball_vel)
+        ball_endpoint = self._cam_to_bot(position = self.endpoint)
 
-            return endpoint_meters, ball_dir, time_to_endpoint, ball_px_x, self._cam_to_bot(self.ball_pos)
-        else:
-            return [None] * 5
+        return (ball_pos_m, ball_endpoint, self.time_to_endpoint, ball_vel_ms)
+
+
 
     def playback(self, bot_pos: NDArray[np.double] = None, bot_pos_d: NDArray[np.double] = None):
         '''
@@ -279,9 +340,9 @@ class cameraModule:
             cv.circle(self.frame, self.ball_pos, 5, (0, 255, 255), -1)
 
             # Draw circle about smoothed endpoint
-            if self.ball_endpoint is not None:
-                cv.circle(self.frame, self.ball_endpoint, self.ball_radius_measured, self.color[1], 2)
-                cv.circle(self.frame, self.ball_endpoint, 5, (0, 0, 255), -1)
+            if self.endpoint is not None:
+                cv.circle(self.frame, self.endpoint, self.ball_radius_measured, self.color[1], 2)
+                cv.circle(self.frame, self.endpoint, 5, (0, 0, 255), -1)
 
             # draw velocity vector
             if self.ball_vel is not None:

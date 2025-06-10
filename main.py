@@ -35,6 +35,7 @@ bot = pongBot(
     K_P=np.diag([3.2, 3]),
     K_D=np.diag([.07, .09]),
     loop_freq=cam.get_freq(),
+    arena_constraints=cam.get_arena_constraints(),
     controller = 'Simplified Inverse Dynamics',
     homing_offsets=[-901, -198],
     flick_time = .6,
@@ -46,9 +47,12 @@ bot = pongBot(
 while True:
     # Sense: determine desired position, velocity, acceleration
     if cam.find_ball():
-        # pass camera prediction to bot
-        predicted_endpoint, predicted_dir, predicted_time, ball_px_x, ball_pos = cam.predict_path(dt=0.1)
-        bot.update_endpoint(predicted_endpoint, predicted_dir, predicted_time, ball_px_x, ball_pos)
+        cam.predict_path(dt=0.1)
+
+        # In cam module, generate instructions for bot
+        cam_info = cam.generate_bot_goal()
+        print(f"{cam_info=}")
+        bot.update(cam_info)
 
     # Control: take control step
     pos, pos_d = bot.step()

@@ -19,14 +19,14 @@ class pongBot:
         gear_ratio: Tuple[int],
         K_P: NDArray[np.double],
         K_D: NDArray[np.double],
-        loop_freq: float,
+        loop_freq: float, # Frequency at which to loop controller
+        arena_constraints: Tuple[tuple], # min and max y constraints due to arena walls
         controller: str,
         homing_offsets: List[int] = [0, 0],
         lost_endpoint_threshold: int = 3,
         traj_padding: float = 1.,
         flick_time: float = 0.15,
-        flick_threshold: float = 0.5,
-        flick_px_threshold: int = 120,
+        flick_threshold: float = 0.1,
         flick_scale: float = .15
     ):
         # Manipulator Parameters
@@ -54,6 +54,8 @@ class pongBot:
         # Class Vars
         # Endpoint Management
         self.lost_endpoint_threshold = lost_endpoint_threshold # after how many loops should bot give up if no endpoints are provided?
+        self.goal_line_x = arena_constraints[0][0]
+        self.goal_line_y_range = arena_constraints[:][1]
         self._reset_endpoint()
 
         # Trajectory Management
@@ -63,7 +65,6 @@ class pongBot:
         self.traj_padding = traj_padding
         self.flick_time = flick_time # how long to spend flicking
         self.flick_threshold = flick_threshold # how close to start flick? (time)
-        self.flick_px_threshold = flick_px_threshold
         self.flick_scale = flick_scale # how far to flick to?
 
     @property
@@ -78,21 +79,13 @@ class pongBot:
         self.motors._torque_enable(0)
 
     # External updater for endpoint
-    def update_endpoint(
-        self, 
-        endpoint: NDArray[np.double], 
-        dir: NDArray[np.double], 
-        time: float, 
-        ball_px_x: int,
-        ball_pos: NDArray[np.double]
-    ):
+    def update(self, cam_info: tuple):
         # Ignore updates during flick (mode 2)
         if self.mode != 2:
-            self.endpoint = endpoint
-            self.dir = dir
-            self.time_to_endpoint = time
-            self.ball_px_x = ball_px_x
-            self.ball_pos = ball_pos
+            self.ball_pos = cam_info[0]
+            self.ball_endpoint = cam_info[1]
+            self.time_to_endpoint = cam_info[2]
+            self.ball_vel = cam_info[3]
 
     # Private endpoint handler for when endpoint is processed
     def _reset_endpoint(self):
@@ -103,54 +96,60 @@ class pongBot:
     def _normal_traj_time(self):
         return max([self.time_to_endpoint, self.traj_padding])
 
+    def _flick_start_condition(self, bot_pos: NDArray[np.double]):
+        # meter distance between bot pos and ball pos
+        return np.sqrt(np.sum((self.ball_pos - bot_pos)**2)) < self.flick_threshold
+
+    def _get_target_pos(self):
+        if self.ball_endpoint[1] > self.goal_line_y_range[1]:
+            y = self.goal_line_y_range[1]
+        elif self.ball_endpoint[1] < self.goal_line_y_range[0]:
+            y = self.goal_line_y_range[0]
+        else:
+            y = self.ball_endpoint[1]
+
+        return np.asarray((self.goal_line_x, y))
+
     def step(self):
         q_actual = self.q
         qdot_actual = self.qdot
 
         fk_pos = self._forward_kinematics(q_actual)
+        target_pos = fk_pos
 
         # Determine course of action
         if self.mode == 0:
             # WAITING Mode: Don't care/know where ball is
             
             # Should we care?
-            if self.endpoint is not None:
+            if self.ball_endpoint is not None:
                 # Ball is coming! switch mode and start prep
                 self.mode = 1
 
                 print("Generating trajectory")
-                print(f"{self.endpoint=}")
-                self.spl = self._generate_trajectory(0, self._normal_traj_time, self.endpoint)
+                target_pos = self._get_target_pos()
+                self.spl = self._generate_trajectory(0, self._normal_traj_time, target_pos)
 
         elif self.mode == 1:
             # PREPARE FOR BALL Mode: Ball is coming to bot
             
             # Check if still coming to bot
             if self.time_to_endpoint:
-                # print(f"{self.time_to_endpoint=}")
-                print(f"{self.ball_px_x=}")
                 # Check if should start flick
                 # thresholds: self.time_to_endpoint < self.flick_threshold
-                if 20 < self.ball_px_x < self.flick_px_threshold:
+                target_pos = self._get_target_pos()
+
+                if self._flick_start_condition(fk_pos):
                     # Start flick!
                     print("Flicking!")
                     self.mode = 2
-
-                    # self.dir = self.ball_pos[0] - fk_pos
-                    # print(f"{self.ball_pos[0]=}")
-                    # print(f"{fk_pos=}")
-                    # print(f"{self.endpoint=}")
-                    # print(f"{self.flick_scale=}")
-                    # print(f"{self.dir=}")
-                    # print(f"{self.flick_scale*self.dir=}")
-                    # print(f"{self.endpoint + self.flick_scale*self.dir=}")
                     self.dir = np.asarray([.1, 0])
 
                     self.flick_start = time.time()
-                    self.spl = self._generate_trajectory(0, self.flick_time + self.traj_padding, self.endpoint + self.flick_scale*self.dir)
+                    self.spl = self._generate_trajectory(0, self.flick_time + self.traj_padding, target_pos + self.flick_scale*self.dir)
                     
                 else:
-                    self.spl = self._generate_trajectory(0, self._normal_traj_time, self.endpoint)
+                    self.spl = self._generate_trajectory(0, self._normal_traj_time, target_pos)
 
                 self._reset_endpoint()
             else:
@@ -158,29 +157,23 @@ class pongBot:
                 self.endpoint_lost_counter += 1
                 if self.endpoint_lost_counter > self.lost_endpoint_threshold:
                     self.mode = 0 # back to waiting...
+                    self.spl = None
 
         elif self.mode == 2:
             # FLICK Mode: Hit ball once it is close enough
             print("Flick mode")
-            # self.dir = self.ball_pos[0] - fk_pos
-            # print(f"{self.ball_pos[0]=}")
-            # print(f"{fk_pos=}")
-            # print(f"{self.endpoint=}")
-            # print(f"{self.dir=}")
-            # print(f"{self.flick_scale*self.dir=}")
-            # print(f"{self.endpoint + self.flick_scale*self.dir=}")
             self.dir = np.asarray([.1, 0])
+
             # Check if flick should end after this
             time_since_flick_start = time.time() - self.flick_start
             flick_end = self.flick_time - time_since_flick_start
             if flick_end <= 0:
                 self.mode = 0
             else:
-                self.spl = self._generate_trajectory(0, flick_end + self.traj_padding, self.endpoint + self.flick_scale*self.dir)
+                target_pos = self._get_target_pos()
+                self.spl = self._generate_trajectory(0, flick_end + self.traj_padding, target_pos + self.flick_scale*self.dir)
                 
         # Control step
-
-        # print(f"{self.spl=}")
         if self.spl:
             q_d = self.q_final
             qdot_d = self.spl(self.loop_freq, 1)
@@ -197,10 +190,11 @@ class pongBot:
             qdot_d=qdot_d,
             qddot_d=qddot_d
         )
+
         # print(f"{u=}")
         self.motors.set_pwm(u)
 
-        return self._forward_kinematics(q_actual), self.endpoint
+        return fk_pos, target_pos
     
     def _generate_trajectory(
         self, 
