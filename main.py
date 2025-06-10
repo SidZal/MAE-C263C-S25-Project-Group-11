@@ -35,6 +35,7 @@ bot = pongBot(
     K_P=np.diag([3.2, 3]),
     K_D=np.diag([.07, .09]),
     loop_freq=cam.get_freq(),
+    controller = 'Simplified Inverse Dynamics',
     homing_offsets=[-901, -198],
     flick_time = .6,
     flick_scale = 3,

@@ -5,7 +5,7 @@ from typing import Tuple, List
 from numpy.typing import NDArray
 
 from servosChainClass import servos
-from stepcontroller import inverseDynamicsControl
+from stepcontroller import stepController
 
 class pongBot:
     def __init__(
@@ -20,6 +20,7 @@ class pongBot:
         K_P: NDArray[np.double],
         K_D: NDArray[np.double],
         loop_freq: float,
+        controller: str,
         homing_offsets: List[int] = [0, 0],
         lost_endpoint_threshold: int = 3,
         traj_padding: float = 1.,
@@ -38,7 +39,7 @@ class pongBot:
 
         # Project Modules
         self.motors = servos(port=motors_port, num_motors=2, homing_offsets=homing_offsets)
-        self.controller = inverseDynamicsControl(
+        self.controller = stepController(
             K_P=K_P,
             K_D=K_D,
             link_length=link_length,
@@ -46,7 +47,8 @@ class pongBot:
             link_inertia=link_inertia,
             motor_mass=motor_mass,
             motor_inertia=motor_inertia,
-            gear_ratio=gear_ratio
+            gear_ratio=gear_ratio,
+            controller=controller
         )
 
         # Class Vars

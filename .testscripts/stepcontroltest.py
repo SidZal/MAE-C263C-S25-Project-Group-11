@@ -9,13 +9,13 @@ import time
 from matplotlib import pyplot as plt
 from scipy.interpolate import CubicSpline
 
-from stepcontroller import inverseDynamicsControl
+from stepcontroller import stepController
 from servosChainClass import servos
 from fixedFrequencyLoopManager import fixedFrequencyLoopManager
 
 motors = servos(port='/dev/ttyUSB0', num_motors=2, homing_offsets=[-901, -198])
 
-controller = inverseDynamicsControl(
+controller = stepController(
             K_P=np.diag([3.2, 3]),
             K_D=np.diag([.07, .09]),
             link_length=(0.15, 0.125),
@@ -23,7 +23,8 @@ controller = inverseDynamicsControl(
             link_inertia=(0.001, 0.001),
             motor_mass=(0.08, 0.08),
             motor_inertia=(0.007, 0.007),
-            gear_ratio=(193, 193)
+            gear_ratio=(193, 193),
+            controller = 'Simplified Inverse Dynamics'
         )
 
 loop_manager = fixedFrequencyLoopManager(30.0)
@@ -34,17 +35,6 @@ q_final = np.deg2rad([0, 0])
 end_time = 3
 joint_positions = [motors.read_position()]
 control_period = 1/30.0
-
-# spl = CubicSpline(
-#     x = [0, end_time + .2],
-#     y = np.asarray([joint_positions[0], q_final]).T,
-#     axis = 1,
-#     bc_type = ((1, np.zeros(2)), (1, np.zeros(2)))
-# )
-
-# time.sleep(5)
-# print("Now")
-
 start_time = time.time()
 times = [0.]
 
