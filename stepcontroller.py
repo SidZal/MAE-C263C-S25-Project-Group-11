@@ -57,17 +57,17 @@ class stepController:
         self.Bq[1, 0] = self.Bq[0, 1] = self.I_l2 + self.k_r2*self.I_m2 + self.m_l2*self.l_2**2
         self.Bq[1, 1] = self.I_l2 + self.m_l2*self.l_2**2 + self.k_r2**2*self.I_m2
 
-        if controller is 'Simplified Inverse Dynamics':
+        if controller == 'Simplified Inverse Dynamics':
             # Simplified Inverse Dynamics: Similar to C263C HW#4
             self.control_step = self.simplified_inverse_dynamics_step
 
-        elif controller is 'Inertial Inverse Dynamics':
+        elif controller == 'Inertial Inverse Dynamics':
             # Inverse Dynamics, neglect centrifugal and coriolis forces
             self.control_step = self.inertial_inverse_dynamics_step
 
-        elif controller is 'Inverse Dynamics':
+        elif controller == 'Inverse Dynamics':
             # Inverse Dynamics as taught in class
-            self.control_Step = self.inverse_dynamics_step
+            self.control_step = self.inverse_dynamics_step
 
         else:
             raise ValueError("Invalid Controller Selected!")
@@ -75,7 +75,7 @@ class stepController:
     def _compute_inertial_matrix(self, q2: np.double):
         # Calculate configuration-specific terms
         config_terms_Bq = np.zeros((2, 2))
-        config_terms_Bq[0, 0] = self.m_l2*(self.a_1**2 + self.l2**2 + 2*self.a_1*self.l_2*np.cos(q2))
+        config_terms_Bq[0, 0] = self.m_l2*(self.a_1**2 + self.l_2**2 + 2*self.a_1*self.l_2*np.cos(q2))
         config_terms_Bq[1, 0] = config_terms_Bq[0, 1] = self.m_l2*self.a_1*self.l_2*np.cos(q2)
 
         # Sum constants and configuration-specific terms
@@ -86,10 +86,10 @@ class stepController:
         centrifugal[1, 0] = centrifugal[0, 1] = self.m_l2*self.a_1*self.l_2*np.sin(q2)
         centrifugal[0, 1] *= -1
 
-        coriolis = np.zeros((1, 2))
-        coriolis[0, 1] = -2*self.m_l2*self.a_1*self.l_2*np.sin(q2)
+        coriolis = np.zeros((2))
+        coriolis[1] = -2*self.m_l2*self.a_1*self.l_2*np.sin(q2)
 
-        return centrifugal @ (qdot**2) + coriolis @ np.prod(qdot)
+        return centrifugal @ (np.asarray(qdot)**2) + coriolis.T * np.prod(qdot)
 
     def simplified_inverse_dynamics_step(
         self, 
