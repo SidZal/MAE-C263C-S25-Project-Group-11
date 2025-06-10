@@ -14,13 +14,13 @@ purple = [(150, 50, 20), (180, 255, 255)] # ball color to look for
 cam = cameraModule(
     CAM_PORT, 
     purple, 
-    arena_height=400, 
+    arena_height=440, 
     ball_radius=10,
     endpoint_threshold=200,
     px_per_meter_x=1450,
     px_per_meter_y=1450,
-    bot_offset=0.08,
-    height_scale=0.5
+    bot_offset=0.07,
+    height_scale=0.4
 )
 
 # Pong Bot: takes arm parameters in SI
@@ -32,10 +32,13 @@ bot = pongBot(
     motor_mass=(0.08, 0.08), 
     motor_inertia=(0.007, 0.007),
     gear_ratio=(193, 193),
-    K_P=np.diag([3.8, 3.8]),
-    K_D=np.diag([.11, .11]),
+    K_P=np.diag([3.2, 3]),
+    K_D=np.diag([.07, .09]),
     loop_freq=cam.get_freq(),
-    homing_offsets=[-901, -198]
+    homing_offsets=[-901, -198],
+    flick_time = .6,
+    flick_scale = 3,
+    flick_px_threshold = 250
 )
 
 
@@ -43,8 +46,8 @@ while True:
     # Sense: determine desired position, velocity, acceleration
     if cam.find_ball():
         # pass camera prediction to bot
-        predicted_endpoint, predicted_dir, predicted_time = cam.predict_path(dt=0.1)
-        bot.update_endpoint(predicted_endpoint, predicted_dir, predicted_time)
+        predicted_endpoint, predicted_dir, predicted_time, ball_px_x, ball_pos = cam.predict_path(dt=0.1)
+        bot.update_endpoint(predicted_endpoint, predicted_dir, predicted_time, ball_px_x, ball_pos)
 
     # Control: take control step
     pos, pos_d = bot.step()

@@ -12,11 +12,13 @@ CAM_PORT = 4 # OpenCV camera capture ID
 DXL_PORT = "/dev/ttyUSB0" # U2D2 Serial Port, OS-dependent (Windows: "COM#", Linux: "/dev/ttyUSB#", Mac: idk)
 
 purple = [(150, 50, 20), (180, 255, 255)]
-cam = cameraModule(CAM_PORT, purple, 440, 10,
+cam = cameraModule(CAM_PORT, purple, ball_radius=10,
     px_per_meter_x=1450, # px/m
     px_per_meter_y=1450, # px/m
-    bot_offset=0.08, # m
-    height_scale=0.5 # pixel height multiplier offset
+    bot_offset=0.07, # m
+    height_scale=0.4, # pixel height multiplier offset
+    arena_height=440,
+    endpoint_threshold=240
 )
 
 # px_per_meter_x=1450, # px/m

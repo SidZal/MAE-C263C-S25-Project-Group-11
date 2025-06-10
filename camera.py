@@ -166,7 +166,7 @@ class cameraModule:
                 
         return ret
 
-    def predict_path(self, espr = 0.8, dt = 0.5):
+    def predict_path(self, dt = 0.5):
         """
         Casts ray from ball position w/ velocity vector
         to determine where ball will cross into some radius around
@@ -178,17 +178,18 @@ class cameraModule:
         :param dt: delta time, time resolution
         """
         # Init possible returns
-        endpoint_meters = ball_dir = time_to_endpoint = None
+        endpoint_meters = ball_dir = time_to_endpoint = ball_px_x = None
 
         # Check if ball found
         if self.ball_pos is not None and self.ball_vel is not None:
             [bx, by] = self.ball_pos
+            ball_px_x = bx - self.endpoint_threshold
 
             # Take rolling average
             [vx, vy] = self.ball_vel
 
             # Radius to watch for cross
-            r_prep = espr*1
+            # r_prep = espr*1
 
             # Absolute y max given arena bounds
             y_max = self.arena_height/2
@@ -237,7 +238,7 @@ class cameraModule:
 
                     time_to_endpoint += dt
 
-                if np.size(self.ball_predicted_path) == 0:
+                if bx < self.endpoint_threshold or np.size(self.ball_predicted_path) == 0:
                     self.ball_endpoint = None
                 else:
                     self.ball_endpoint_rolling = rolling_add(self.ball_endpoint_rolling, self.ball_predicted_path[-1][0:2])
@@ -249,7 +250,9 @@ class cameraModule:
                         velocity = ball_dir
                     )
 
-        return endpoint_meters, ball_dir, time_to_endpoint
+            return endpoint_meters, ball_dir, time_to_endpoint, ball_px_x, self._cam_to_bot(self.ball_pos)
+        else:
+            return [None] * 5
 
     def playback(self, bot_pos: NDArray[np.double] = None, bot_pos_d: NDArray[np.double] = None):
         '''
@@ -258,6 +261,8 @@ class cameraModule:
         # Draw arena
         cv.line(self.frame, (0, int(self.height/2 + self.arena_height/2)), (self.width, int(self.height/2 + self.arena_height/2)), 0, 4)
         cv.line(self.frame, (0, int(self.height/2 - self.arena_height/2)), (self.width, int(self.height/2 - self.arena_height/2)), 0, 4)
+        cv.line(self.frame, (self.endpoint_threshold, 0), (self.endpoint_threshold, self.height), 0, 4)
+
 
         # Draw bot and desired
         if bot_pos is not None:
