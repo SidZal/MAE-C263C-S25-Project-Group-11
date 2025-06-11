@@ -15,16 +15,26 @@ from fixedFrequencyLoopManager import fixedFrequencyLoopManager
 
 motors = servos(port='/dev/ttyUSB0', num_motors=2, homing_offsets=[-901, -198])
 
+# simplified: KP = 1.1, 1, K_d = .1, .08
+# inertial: 
+# K_P=np.diag([1.1, 1.1]),
+#             K_D=np.diag([.08, .09]),
+# full id:
+
+K_P=np.diag([2.2, 2.1])
+K_D=np.diag([.07, .07])
+controllertype = 'Inverse Dynamics'
+
 controller = stepController(
-            K_P=np.diag([3.2, 3]),
-            K_D=np.diag([.07, .09]),
+            K_P=K_P,
+            K_D=K_D,
             link_length=(0.15, 0.125),
             link_mass=(0.035, 0.035),
             link_inertia=(0.001, 0.001),
             motor_mass=(0.08, 0.08),
             motor_inertia=(0.007, 0.007),
             gear_ratio=(193, 193),
-            controller = 'Simplified Inverse Dynamics'
+            controller = controllertype
         )
 
 loop_manager = fixedFrequencyLoopManager(30.0)
@@ -32,7 +42,7 @@ loop_manager = fixedFrequencyLoopManager(30.0)
 # q_final = np.asarray(motors.read_position())
 q_final = np.deg2rad([0, 0])
 
-end_time = 3
+end_time = 1.5
 joint_positions = [motors.read_position()]
 control_period = 1/30.0
 start_time = time.time()
@@ -58,10 +68,10 @@ while times[-1] < end_time - 1:
         # bc_type = ((1, qdot), (1, np.zeros(2)))
     )
 
-    print(f"{q=}")
-    print(f"{qdot=}")
-    print(f"{spl(times[-1] + control_period, 1)=}")
-    print(f"{spl(times[-1] + control_period, 2)=}")
+    # print(f"{q=}")
+    # print(f"{qdot=}")
+    # print(f"{spl(times[-1] + control_period, 1)=}")
+    # print(f"{spl(times[-1] + control_period, 2)=}")
 
     u = controller.control_step(
         q=q,
@@ -71,7 +81,7 @@ while times[-1] < end_time - 1:
         qddot_d=spl(control_period, 2)
     ) 
 
-    print(f"{u=}")
+    # print(f"{u=}")
     motors.set_pwm(u)
 
     # Helps while loop run at a fixed frequency
@@ -84,8 +94,8 @@ motors._torque_enable(0)
 time_stamps = np.asarray(times)
 joint_positions = np.rad2deg(joint_positions).T
 
-print(f"{time_stamps=}")
-print(f"{joint_positions=}")
+# print(f"{time_stamps=}")
+# print(f"{joint_positions=}")
 
 # Create figure and axes
 fig = plt.figure(figsize=(10, 5))
@@ -100,6 +110,9 @@ ax_motor0.set_xlabel("Time [s]")
 ax_motor1.set_xlabel("Time [s]")
 ax_motor0.set_ylabel("Motor Angle [deg]")
 ax_motor1.set_ylabel("Motor Angle [deg]")
+
+ax_motor0.set_xlim(0, end_time-1)
+ax_motor1.set_xlim(0, end_time-1)
 
 ax_motor0.axhline(
     math.degrees(q_final[0]), 
@@ -150,5 +163,6 @@ ax_motor1.plot(
 ax_motor0.legend()
 ax_motor1.legend()
 
+fig.savefig(f"K_p:{K_P[0,0]},{K_P[1, 1]},K_d:{K_D[0,0]},{K_D[1,1]},{controllertype}.png")
 # ----------------------------------------------------------------------------------
 plt.show()

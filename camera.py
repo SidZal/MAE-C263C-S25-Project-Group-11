@@ -10,6 +10,14 @@ def rolling_add(arr, obj):
     arr = np.append(arr, [obj], axis=0)
     return arr
 
+def rolling_average(arr):
+    sum = np.zeros(len(arr[0]))
+    for val in arr:
+        if (val != np.zeros(len(val), dtype=type(val))).any():
+            sum += np.asarray(val)
+
+    return sum / len(arr)
+
 class cameraModule:
     """
     Class for handling camera and cv calls
@@ -77,13 +85,13 @@ class cameraModule:
 
     # get min and max y limits for bot
     def get_arena_constraints(self):
-        max_y = (self.height - self.arena_height)/2 + self.bot_radius
-        min_y = (self.height + self.arena_height)/2 - self.bot_radius
+        max_y = (self.height - self.arena_height)/2 + self.bot_radius/2
+        min_y = (self.height + self.arena_height)/2 - self.bot_radius/2
 
-        max_bot_pos = self._cam_to_bot(position = (self.endpoint_threshold, max_y))
-        min_bot_pos = self._cam_to_bot(position = (self.endpoint_threshold, min_y))
+        max_bot_pos, _ = self._cam_to_bot(position = (self.endpoint_threshold, max_y))
+        min_bot_pos, _ = self._cam_to_bot(position = (self.endpoint_threshold, min_y))
 
-        return (min_bot_pos, max_bot_pos)
+        return np.asarray((min_bot_pos, max_bot_pos))
 
     # convert from Camera Frame (pixels) to Bot Frame (meters)
     def _cam_to_bot(self, position: Tuple[int] = None, velocity: Tuple[int] = None):    
@@ -149,21 +157,26 @@ class cameraModule:
             cntrs = imutils.grab_contours(cntrs)
             center = None
 
+            # Old pos for velocity calc, reset current
+            last_pos = self.ball_pos
+            self.ball_pos = None
+
             if len(cntrs) > 0:
                 c = max(cntrs, key = cv.contourArea)
                 ((x, y), radius) = cv.minEnclosingCircle(c)
 
-                if radius > 10:
+                if radius > 20:
                     # Moments - unnecessary?
                     # M = cv.moments(c)
                     # center = (int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"]))
                     
                     # Old pos for velocity calc
-                    last_pos = self.ball_pos
+                    # last_pos = self.ball_pos
 
                     # Update ball position
                     self.ball_pos_rolling = rolling_add(self.ball_pos_rolling, np.array((int(x), int(y)), dtype=int))
-                    self.ball_pos = np.mean(self.ball_pos_rolling, axis=0, dtype=int)
+                    # self.ball_pos = np.mean(self.ball_pos_rolling, axis=0, dtype=int)
+                    self.ball_pos = np.asarray(rolling_average(self.ball_pos_rolling), dtype=int)
 
                     loop_time = time.perf_counter_ns()
 
@@ -174,12 +187,12 @@ class cameraModule:
 
                         self.ball_vel_rolling = rolling_add(self.ball_vel_rolling, new_vel)
                         self.ball_vel = np.mean(self.ball_vel_rolling, axis=0)
+                        self.ball_vel = np.asarray(rolling_average(self.ball_vel_rolling))
+
                     
                     self.last_time = loop_time        
 
                     self.ball_radius_measured = int(radius)
-                else:
-                    self.ball_pos = None
                 
         return ret
 
@@ -187,6 +200,8 @@ class cameraModule:
         '''
         Predicts path of ball until it hits a wall or reaches the endpoint threshold
         '''
+        # Clear endpoint
+        self.endpoint = None
         # Check if ball found
         if self.ball_pos is not None and self.ball_vel is not None:
             [bx, by] = self.ball_pos
@@ -224,7 +239,9 @@ class cameraModule:
 
                 if len(self.ball_predicted_path) != 0:
                     self.endpoint_rolling = rolling_add(self.endpoint_rolling, self.ball_predicted_path[-1, 0:2])
-                    self.endpoint = np.mean(self.endpoint_rolling, axis=0)
+                    self.endpoint = np.asarray(rolling_average(self.endpoint_rolling), dtype=int)
+
+
 
     def predict_path_perfect_collisions(self, dt:float = 0.5):
         '''
@@ -309,13 +326,13 @@ class cameraModule:
         '''
         
         ball_pos_m, ball_vel_ms = self._cam_to_bot(position=self.ball_pos, velocity=self.ball_vel)
-        ball_endpoint = self._cam_to_bot(position = self.endpoint)
+        ball_endpoint, _ = self._cam_to_bot(position = self.endpoint)
 
         return (ball_pos_m, ball_endpoint, self.time_to_endpoint, ball_vel_ms)
 
 
 
-    def playback(self, bot_pos: NDArray[np.double] = None, bot_pos_d: NDArray[np.double] = None):
+    def playback(self, bot_pos: NDArray[np.double] = None, bot_pos_d: NDArray[np.double] = None, show_mask: bool = False):
         '''
         Optional playback to show ball tracking and path prediction
         '''
@@ -361,7 +378,8 @@ class cameraModule:
 
         # Show playback
         cv.imshow("Camera", self.frame)
-        # cv.imshow("Mask", self.mask)
+        if show_mask:
+            cv.imshow("Mask", self.mask)
 
         # kill key q
         return not cv.waitKey(1) == ord('q')

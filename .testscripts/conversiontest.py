@@ -15,10 +15,10 @@ purple = [(150, 50, 20), (180, 255, 255)]
 cam = cameraModule(CAM_PORT, purple, ball_radius=10,
     px_per_meter_x=1450, # px/m
     px_per_meter_y=1450, # px/m
-    bot_offset=0.07, # m
-    height_scale=0.4, # pixel height multiplier offset
+    bot_offset=0.14, # m
+    height_scale=0.48, # pixel height multiplier offset
     arena_height=440,
-    endpoint_threshold=240
+    endpoint_threshold=65
 )
 
 # px_per_meter_x=1450, # px/m
@@ -37,7 +37,9 @@ bot = pongBot(
     K_P=np.diag([3.8, 3.8]),
     K_D=np.diag([.11, .11]),
     loop_freq=cam.get_freq(),
-    homing_offsets=[-901, -198]
+    homing_offsets=[-901, -198],
+    arena_constraints=cam.get_arena_constraints(),
+    controller = 'Simplified Inverse Dynamics'
 )
 
 # disable torque
